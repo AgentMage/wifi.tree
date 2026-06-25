@@ -17,6 +17,10 @@ typedef struct {
 
 void clients_init(void);
 
+// Subscribe to DHCP "IP assigned to client" events so client hostnames
+// (DHCP option 12) get recorded. Call once, after the default event loop exists.
+void clients_start_hostname_capture(void);
+
 // Resolve the client behind an AP-side IPv4 address (network byte order) to its
 // table entry, creating one if the MAC is newly seen. NULL if the IP isn't a
 // current AP station.

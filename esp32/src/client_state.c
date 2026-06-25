@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#include "esp_event.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -39,6 +40,22 @@ static client_t *get_or_create(const uint8_t mac[6]) {
     oldest->used = true;
     oldest->first_seen_us = esp_timer_get_time();
     return oldest;
+}
+
+// DHCP assigned an IP to a station — capture its hostname (option 12) if any.
+static void on_ip_assigned(void *arg, esp_event_base_t base,
+                           int32_t id, void *data) {
+    ip_event_assigned_ip_to_client_t *e = (ip_event_assigned_ip_to_client_t *)data;
+    if (e->hostname[0] == '\0') return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    client_t *c = get_or_create(e->mac);
+    strlcpy(c->hostname, e->hostname, sizeof(c->hostname));
+    xSemaphoreGive(s_lock);
+}
+
+void clients_start_hostname_capture(void) {
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ASSIGNED_IP_TO_CLIENT,
+                               on_ip_assigned, NULL);
 }
 
 client_t *clients_find_by_ip(uint32_t ip_nbo) {

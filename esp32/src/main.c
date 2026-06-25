@@ -39,6 +39,7 @@ void app_main(void) {
         ESP_LOGI(TAG, "=== PORTAL MODE === uplink: %s", ssid);
         led_set(LED_BLINK_SLOW);
         wifi_start_portal(ssid, pass);
+        clients_start_hostname_capture();        // record client hostnames via DHCP
         dns_server_start(wifi_ap_ip(), false);  // spoof captive domains, forward the rest
         http_server_start_portal();
         xTaskCreate(portal_led_task, "portal_led", 1024, NULL, 2, NULL);
