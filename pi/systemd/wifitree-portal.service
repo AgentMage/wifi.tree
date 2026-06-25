@@ -1,0 +1,13 @@
+[Unit]
+Description=Wifi Tree captive portal web app
+After=network.target hostapd.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/sbin/wifitree-portal.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

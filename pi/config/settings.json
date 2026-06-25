@@ -1,0 +1,5 @@
+{
+  "leaf_ttl_hours": 3.0,
+  "default_monthly_mb": 100.0,
+  "default_bw_mbit": 0.1
+}

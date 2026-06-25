@@ -1,0 +1,13 @@
+[Unit]
+Description=Wifi Tree web admin panel (LAN side)
+After=network.target wifitree-accountd.service
+Wants=wifitree-accountd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/sbin/wifitree-webadmin.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Wifi Tree bandwidth shaping (cake+ifb)
+After=hostapd.service network.target
+Requires=hostapd.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/wifitree-shaping.sh
+
+[Install]
+WantedBy=multi-user.target

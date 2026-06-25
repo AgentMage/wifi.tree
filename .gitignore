@@ -1,11 +1,16 @@
 # PlatformIO build output
-.pio/
+esp32/.pio/
 
 # Generated ESP-IDF sdkconfig (built from sdkconfig.defaults — don't track)
-sdkconfig.esp32dev
-sdkconfig
+esp32/sdkconfig.esp32dev
+esp32/sdkconfig
 
 # PlatformIO boilerplate placeholders
-include/README
-lib/README
-test/README
+esp32/include/README
+esp32/lib/README
+esp32/test/README
+
+# Pi runtime secrets / generated files
+pi/config/portal.crt
+pi/config/portal.key
+pi/config/admin.conf

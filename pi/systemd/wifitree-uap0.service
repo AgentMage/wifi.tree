@@ -1,0 +1,12 @@
+[Unit]
+Description=Wifi Tree uap0 virtual AP interface setup
+After=NetworkManager.service
+Before=hostapd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/wifitree-uap0-setup.sh
+
+[Install]
+WantedBy=multi-user.target
