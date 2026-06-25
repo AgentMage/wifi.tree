@@ -135,9 +135,9 @@ static esp_err_t portal_post_handler(httpd_req_t *req) {
     char name[64] = {0};
     get_field(body, "name", name, sizeof(name));
     if (name[0] == '\0') {
-        // No name supplied — treat as anonymous
         strncpy(name, "friend", sizeof(name) - 1);
     }
+    name[40] = '\0'; // spec max
 
     char safe_name[320]; // max 40 chars × 6 bytes worst-case HTML escaping + NUL
     html_escape(safe_name, sizeof(safe_name), name);

@@ -125,19 +125,25 @@ const char *wifi_start_setup(void) {
         esp_wifi_scan_get_ap_records(&n, recs);
         s_networks_html[0] = '\0';
         for (int i = 0; i < n; i++) {
-            char opt[300];
-            // Escape quotes in SSID to avoid breaking the HTML attribute
-            char safe_ssid[64];
-            const char *src = (char *)recs[i].ssid;
-            char *dst = safe_ssid;
-            while (*src && dst < safe_ssid + sizeof(safe_ssid) - 2) {
-                if (*src == '"') { *dst++ = '\\'; }
-                *dst++ = *src++;
+            // HTML-entity-encode the SSID for safe use in value="" and display text.
+            // The browser decodes entities before URL-encoding for POST, so the server
+            // receives the original SSID bytes after urldecode().
+            char safe[200];
+            size_t si = 0;
+            for (const char *p = (char *)recs[i].ssid; *p && si + 7 < sizeof(safe); p++) {
+                switch (*p) {
+                    case '&':  memcpy(safe+si,"&amp;", 5); si+=5; break;
+                    case '"':  memcpy(safe+si,"&quot;",6); si+=6; break;
+                    case '<':  memcpy(safe+si,"&lt;",  4); si+=4; break;
+                    case '>':  memcpy(safe+si,"&gt;",  4); si+=4; break;
+                    default:   safe[si++] = *p; break;
+                }
             }
-            *dst = '\0';
+            safe[si] = '\0';
+            char opt[512];
             snprintf(opt, sizeof(opt),
                      "<option value=\"%s\">%s (%d dBm)</option>",
-                     safe_ssid, safe_ssid, recs[i].rssi);
+                     safe, safe, recs[i].rssi);
             strlcat(s_networks_html, opt, sizeof(s_networks_html));
         }
         free(recs);

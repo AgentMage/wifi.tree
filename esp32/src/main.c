@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "dns_server.h"
 #include "http_server.h"
+#include "reset_button.h"
 #include "esp_log.h"
 
 #define TAG "main"
@@ -10,6 +11,8 @@ void app_main(void) {
 
     char ssid[64] = {0}, pass[64] = {0};
     bool has_creds = wifi_load_credentials(ssid, sizeof(ssid), pass, sizeof(pass));
+
+    reset_button_start(); // GPIO0 hold 5s → clear credentials + reboot into setup mode
 
     if (!has_creds) {
         ESP_LOGI(TAG, "=== SETUP MODE ===");
