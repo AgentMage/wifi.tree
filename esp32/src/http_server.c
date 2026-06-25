@@ -1,15 +1,18 @@
 #include "http_server.h"
 #include "wifi_manager.h"
+#include "client_state.h"
 #include "html.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include "lwip/sockets.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
 
 #define TAG "http"
 #define PORTAL_REDIRECT "http://" AP_IP_STR "/"
+#define LEAF_TTL_SECONDS (3 * 3600)   // 3-hour leaf, matching the spec default
 
 static const char *s_networks_html = NULL;
 
@@ -126,7 +129,59 @@ static esp_err_t setup_catchall_handler(httpd_req_t *req) {
 
 // ── Portal mode handlers ──────────────────────────────────────────────────────
 
+// Resolve the AP-side IPv4 address (network byte order) behind a request, or 0.
+static uint32_t client_ip(httpd_req_t *req) {
+    int fd = httpd_req_to_sockfd(req);
+    if (fd < 0) return 0;
+    struct sockaddr_in6 a6;
+    socklen_t len = sizeof(a6);
+    if (getpeername(fd, (struct sockaddr *)&a6, &len) != 0) return 0;
+    if (a6.sin6_family == AF_INET)
+        return ((struct sockaddr_in *)&a6)->sin_addr.s_addr;
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d) — the v4 address is the last 4 bytes.
+    uint32_t ip;
+    memcpy(&ip, &a6.sin6_addr.s6_addr[12], 4);
+    return ip;
+}
+
+// Renders the "Active leaf" status card for a returning visitor.
+static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) {
+    char safe_name[256], safe_host[200];
+    html_escape(safe_name, sizeof(safe_name), c->name[0] ? c->name : "friend");
+    html_escape(safe_host, sizeof(safe_host), c->hostname);
+
+    int h = secs_left / 3600, m = (secs_left % 3600) / 60;
+    char fresh[64];
+    if (h > 0) snprintf(fresh, sizeof(fresh), "%dh %dm", h, m);
+    else       snprintf(fresh, sizeof(fresh), "%dm", m);
+
+    char body[1024];
+    int len = snprintf(body, sizeof(body),
+        "<div class='card ok'>"
+        "<p class='headline'>Your leaf is still fresh, %s &#x1F33F;</p>"
+        "<p class='sub'>You're online. About <strong>%s</strong> of freshness left.</p>"
+        "%s%s%s"
+        "</div>"
+        "<a class='btnlink' href='http://wifi.tree'>Keep browsing &rarr;</a>",
+        safe_name, fresh,
+        safe_host[0] ? "<p class='sub' style='opacity:.6'>device: " : "",
+        safe_host[0] ? safe_host : "",
+        safe_host[0] ? "</p>" : "");
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, body, len);
+    httpd_resp_send_chunk(req, PORTAL_FOOT, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static esp_err_t portal_get_handler(httpd_req_t *req) {
+    client_t *c = clients_find_by_ip(client_ip(req));
+    if (client_leaf_active(c, LEAF_TTL_SECONDS))
+        return send_status_card(req, c, client_leaf_seconds_left(c, LEAF_TTL_SECONDS));
+
+    // New visitor, or leaf expired — show the grow-a-leaf welcome form.
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, PORTAL_WELCOME_HTML, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -144,6 +199,10 @@ static esp_err_t portal_post_handler(httpd_req_t *req) {
         strncpy(name, "friend", sizeof(name) - 1);
     }
     name[40] = '\0'; // spec max
+
+    // Record the leaf against this client so revisits show the status card.
+    client_t *c = clients_find_by_ip(client_ip(req));
+    if (c) clients_grow_leaf(c, name);
 
     char safe_name[320]; // max 40 chars × 6 bytes worst-case HTML escaping + NUL
     html_escape(safe_name, sizeof(safe_name), name);

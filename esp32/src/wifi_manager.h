@@ -28,3 +28,7 @@ uint32_t wifi_ap_ip(void);
 
 // True once STA has an IP address (i.e. internet is reachable via uplink).
 bool wifi_has_uplink(void);
+
+// AP-side esp_netif handle (for DHCP client lookups). NULL before init.
+struct esp_netif_obj;
+struct esp_netif_obj *wifi_ap_netif(void);

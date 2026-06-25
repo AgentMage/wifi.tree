@@ -59,6 +59,10 @@ bool wifi_has_uplink(void) {
     return s_has_uplink;
 }
 
+struct esp_netif_obj *wifi_ap_netif(void) {
+    return s_ap;
+}
+
 // ── Common init ───────────────────────────────────────────────────────────────
 
 static void base_init(void) {

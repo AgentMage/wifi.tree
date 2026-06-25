@@ -89,6 +89,24 @@ static const char SAVING_HTML[] =
     "100%{transform:scale(1) rotate(0);opacity:1}}" \
   "@keyframes leafsway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}"
 
+// ── Shared chrome for dynamically-built pages (status card, admin) ────────────
+// Use: send PORTAL_HEAD, then a snprintf'd body, then PORTAL_FOOT.
+static const char PORTAL_HEAD[] =
+    "<!DOCTYPE html><html><head>"
+    "<meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>wifi.tree</title>"
+    "<style>" PORTAL_CSS "</style>"
+    "</head><body>"
+    "<div class='wrap'>"
+    "<div class='logo'>&#x1F333;</div>"
+    "<h1>wifi.tree</h1>"
+    "<p class='tag'>community wifi &middot; please be mindful, it&#39;s shared</p>";
+
+static const char PORTAL_FOOT[] =
+    "<p class='foot'>Shared, fair, bandwidth-limited.<br>Be kind, keep it light.</p>"
+    "</div></body></html>";
+
 // ── Portal welcome page (GET /) ───────────────────────────────────────────────
 static const char PORTAL_WELCOME_HTML[] =
     "<!DOCTYPE html><html><head>"

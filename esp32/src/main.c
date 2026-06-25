@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "dns_server.h"
 #include "http_server.h"
+#include "client_state.h"
 #include "reset_button.h"
 #include "led.h"
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,7 @@ static void portal_led_task(void *arg) {
 void app_main(void) {
     nvs_init();
     led_init();
+    clients_init();
 
     char ssid[64] = {0}, pass[64] = {0};
     bool has_creds = wifi_load_credentials(ssid, sizeof(ssid), pass, sizeof(pass));
