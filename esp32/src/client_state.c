@@ -110,3 +110,13 @@ int clients_count(void) {
     if (esp_wifi_ap_get_sta_list(&wifi_sta) != ESP_OK) return 0;
     return wifi_sta.num;
 }
+
+int clients_snapshot(client_t *out, int max) {
+    int n = 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS && n < max; i++) {
+        if (s_clients[i].used) out[n++] = s_clients[i];
+    }
+    xSemaphoreGive(s_lock);
+    return n;
+}

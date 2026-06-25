@@ -37,3 +37,6 @@ int client_leaf_seconds_left(const client_t *c, int ttl_seconds);
 
 // Number of clients currently associated to the AP (for the admin page).
 int clients_count(void);
+
+// Copy up to max used table entries into out. Returns the number copied.
+int clients_snapshot(client_t *out, int max);

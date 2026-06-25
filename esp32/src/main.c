@@ -2,6 +2,7 @@
 #include "dns_server.h"
 #include "http_server.h"
 #include "client_state.h"
+#include "config.h"
 #include "reset_button.h"
 #include "led.h"
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,7 @@ static void portal_led_task(void *arg) {
 
 void app_main(void) {
     nvs_init();
+    config_init();
     led_init();
     clients_init();
 
