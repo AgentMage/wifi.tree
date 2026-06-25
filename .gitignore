@@ -1,0 +1,11 @@
+# PlatformIO build output
+.pio/
+
+# Generated ESP-IDF sdkconfig (built from sdkconfig.defaults — don't track)
+sdkconfig.esp32dev
+sdkconfig
+
+# PlatformIO boilerplate placeholders
+include/README
+lib/README
+test/README
