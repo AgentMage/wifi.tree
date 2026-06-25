@@ -18,7 +18,8 @@ static esp_netif_t *s_ap  = NULL;
 static esp_netif_t *s_sta = NULL;
 static uint32_t     s_ap_ip;
 
-static char s_networks_html[4096];
+static char s_networks_html[8192];
+static volatile bool s_has_uplink = false;
 
 // ── NVS ──────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,10 @@ void wifi_save_credentials(const char *ssid, const char *pass) {
 
 uint32_t wifi_ap_ip(void) {
     return s_ap_ip;
+}
+
+bool wifi_has_uplink(void) {
+    return s_has_uplink;
 }
 
 // ── Common init ───────────────────────────────────────────────────────────────
@@ -96,13 +101,14 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
                           int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGW(TAG, "STA disconnected, reconnecting...");
+        s_has_uplink = false;
         esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
         ESP_LOGI(TAG, "Uplink IP: " IPSTR, IP2STR(&ev->ip_info.ip));
-        // Re-enable NAT each time STA (re)connects
         ip_napt_enable(s_ap_ip, 1);
-        ESP_LOGI(TAG, "NAT enabled");
+        s_has_uplink = true;
+        ESP_LOGI(TAG, "NAT + uplink ready");
     }
 }
 

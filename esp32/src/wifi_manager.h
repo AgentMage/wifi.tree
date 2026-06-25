@@ -25,3 +25,6 @@ void wifi_start_portal(const char *sta_ssid, const char *sta_pass);
 
 // Returns AP IP in network byte order (for DNS server).
 uint32_t wifi_ap_ip(void);
+
+// True once STA has an IP address (i.e. internet is reachable via uplink).
+bool wifi_has_uplink(void);

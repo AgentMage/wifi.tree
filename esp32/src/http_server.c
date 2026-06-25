@@ -94,9 +94,15 @@ static esp_err_t setup_save_handler(httpd_req_t *req) {
     }
     body[n] = '\0';
 
-    char ssid[64] = {0}, pass[64] = {0};
-    get_field(body, "ssid", ssid, sizeof(ssid));
-    get_field(body, "pass", pass, sizeof(pass));
+    char ssid[64] = {0}, ssid_manual[64] = {0}, pass[64] = {0};
+    get_field(body, "ssid",        ssid,        sizeof(ssid));
+    get_field(body, "ssid_manual", ssid_manual, sizeof(ssid_manual));
+    get_field(body, "pass",        pass,        sizeof(pass));
+
+    // Manual entry overrides dropdown (supports hidden networks).
+    if (ssid_manual[0] != '\0') {
+        strlcpy(ssid, ssid_manual, sizeof(ssid));
+    }
 
     if (ssid[0] == '\0') {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "SSID required");

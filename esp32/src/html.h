@@ -27,6 +27,9 @@ static const char SETUP_BEFORE_NETS[] =
 
 static const char SETUP_AFTER_NETS[] =
     "</select>"
+    "<label style='margin-top:10px;font-size:12px;opacity:.6'>"
+    "Or type SSID manually (for hidden networks)</label>"
+    "<input type='text' name='ssid_manual' placeholder='e.g. MyHiddenNetwork' autocomplete='off'>"
     "<label>Password</label>"
     "<input type='password' name='pass' placeholder='Leave blank for open networks'>"
     "<button type='submit'>Save &amp; Connect</button>"

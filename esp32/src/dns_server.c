@@ -1,4 +1,5 @@
 #include "dns_server.h"
+#include "wifi_manager.h"
 #include <string.h>
 #include <strings.h>
 #include "freertos/FreeRTOS.h"
@@ -73,8 +74,18 @@ static int make_spoof_reply(const uint8_t *q, int qlen, uint8_t *r) {
     return p;
 }
 
+// Build a SERVFAIL reply (rcode=2) so the client fails fast without waiting for a timeout.
+static int make_servfail(const uint8_t *q, int qlen, uint8_t *r) {
+    if (qlen < 12) return -1;
+    memcpy(r, q, qlen);
+    r[2] = 0x81; r[3] = 0x82; // QR=1, AA=0, RCODE=2 (SERVFAIL)
+    r[6] = 0;    r[7] = 0;    // ancount = 0
+    return qlen;
+}
+
 // Forward query to 8.8.8.8 and relay the reply.  Returns reply length or -1.
 static int forward_query(const uint8_t *query, int qlen, uint8_t *reply) {
+    if (!wifi_has_uplink()) return make_servfail(query, qlen, reply);
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return -1;
 

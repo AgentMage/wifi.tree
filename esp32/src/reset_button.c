@@ -1,4 +1,5 @@
 #include "reset_button.h"
+#include "led.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -35,7 +36,7 @@ static void reset_task(void *arg) {
                     nvs_commit(h);
                     nvs_close(h);
                 }
-                vTaskDelay(pdMS_TO_TICKS(200));
+                led_blink_n(5, 150); // confirm reset to the user before reboot
                 esp_restart();
             }
         } else {
