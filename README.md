@@ -31,9 +31,11 @@ esp32/          Portable implementation — ESP32 DevKit (~$5/unit)
 |---|---|---|
 | **Target** | Raspberry Pi (wavebug dev device) | ESP32 DevKit V1 |
 | **Cost** | ~$40+ | ~$5 |
-| **User tracking** | SQLite per-MAC | None |
+| **User tracking** | SQLite per-MAC | RAM per-MAC (lost on reboot) |
+| **Returning-visitor status card** | Yes | Yes |
 | **Bandwidth shaping** | tc/htb | None |
-| **Admin panel** | Yes | No |
+| **Data metering / quota** | Yes | None |
+| **Admin panel** | Yes (LAN-side) | Yes (`/admin` on the AP) |
 | **HTTPS** | Yes | No |
 
 The Pi is the development reference. The ESP32 is the distribution target.

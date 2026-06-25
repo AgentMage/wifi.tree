@@ -66,8 +66,12 @@ When no uplink credentials are stored:
 | Expired | Leaf TTL elapsed | Expired card + extend form |
 | Over quota | Monthly data cap hit | Over-quota card, no button |
 
-The ESP32 implementation is single-session only (no persistent user tracking) —
-everyone sees the new-visitor flow and gets a fresh leaf on each visit.
+The ESP32 implementation tracks visitors in RAM only (keyed by MAC, lost on
+reboot — no SQLite, no monthly quota). It implements the New, Active, and
+Expired states: a returning visitor with a fresh leaf sees a status card with
+their name, hostname, and remaining freshness. It has no Over-quota state
+(no data metering). Operators get a password-gated admin page at
+`wifi.tree/admin` to view connected visitors and set the leaf TTL.
 
 ## Configurable Parameters
 

@@ -38,13 +38,22 @@ pio run -t upload && pio device monitor
 - **Portal mode** (credentials found): Connects to uplink as STA, enables NAPT, broadcasts `wifi.tree` AP, spoofs only captive-portal probe domains to self (forwards everything else to 8.8.8.8), serves the leaf-growing portal at `/`.
 
 Key source files:
-- `src/main.c` — boot entry, mode decision
+- `src/main.c` — boot entry, mode decision, LED state task
 - `src/wifi_manager.c` — NVS credential storage, AP+STA setup, NAPT
-- `src/dns_server.c` — selective DNS spoofing
-- `src/http_server.c` — HTTP handlers for both modes
-- `src/html.h` — all HTML templates as C string literals
+- `src/dns_server.c` — selective DNS spoofing (SERVFAIL fast-fail until uplink is up)
+- `src/http_server.c` — HTTP handlers: portal, setup wizard, and the `/admin` page
+- `src/client_state.c` — in-RAM per-MAC visitor table (name, hostname, leaf timestamp); maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`
+- `src/config.c` — NVS-backed leaf TTL + admin password (salted SHA-256 via PSA crypto)
+- `src/reset_button.c` — GPIO0 5s hold → factory reset
+- `src/led.c` — GPIO2 status LED (fast=setup, slow=connecting, solid=online)
+- `src/html.h` — HTML templates as C string literals; dynamic pages (status card, admin) reuse `PORTAL_HEAD`/`PORTAL_FOOT` chrome
 
-`sdkconfig.defaults` enables lwIP NAPT (`CONFIG_LWIP_IP_NAPT=y`) which is required for internet forwarding.
+Unlike the spec's original "single-session" ESP32, the firmware now tracks
+visitors in RAM (keyed by MAC, cleared on reboot) so returning visitors with a
+fresh leaf get a status card, and operators get a password-gated `/admin` page.
+No SQLite, no data metering, no bandwidth shaping — those stay Pi-only.
+
+`sdkconfig.defaults` enables lwIP NAPT (`CONFIG_LWIP_IP_NAPT=y`), required for internet forwarding. `src/CMakeLists.txt` declares explicit `REQUIRES` (incl. `mbedtls` for PSA crypto).
 
 ## Pi Implementation
 
