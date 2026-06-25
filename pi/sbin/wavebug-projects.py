@@ -22,7 +22,7 @@ SESSIONS    = {}
 DEFAULT_PROJECTS = {"projects": [
     {
         "id": "wifitree",
-        "name": "Wifi Tree",
+        "name": "wifi.tree",
         "description": "Community wifi AP with captive portal and usage metering",
         "services": ["hostapd", "wifitree-portal", "wifitree-accountd", "wifitree-webadmin"],
         "admin_url": "http://wavebug.local:8090"

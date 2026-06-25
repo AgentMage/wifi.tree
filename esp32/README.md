@@ -15,10 +15,10 @@ Serial monitor at 115200 baud on `/dev/ttyUSB0`.
 
 ## First boot
 
-1. Connect to `WifiTree-Setup`
+1. Connect to `wifi.tree-setup`
 2. Open any page — setup wizard appears
 3. Pick uplink network + password → device reboots
-4. Connect to `WifiTree` — portal is live at `http://10.42.0.1/` or `http://wifi.tree/`
+4. Connect to `wifi.tree` — portal is live at `http://10.42.0.1/` or `http://wifi.tree/`
 
 ## Differences from Pi implementation
 

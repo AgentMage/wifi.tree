@@ -1,4 +1,4 @@
-# Wifi Tree
+# wifi.tree
 
 Community captive-portal wifi. Visitors connect, enter a name to grow a leaf,
 and get internet access. Shared bandwidth, leaf metaphor, be kind.

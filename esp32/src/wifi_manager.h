@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 #define AP_IP_STR   "10.42.0.1"
-#define AP_SSID     "WifiTree"
-#define AP_SSID_SETUP "WifiTree-Setup"
+#define AP_SSID       "wifi.tree"
+#define AP_SSID_SETUP "wifi.tree-setup"
 
 // Must be called first — initialises NVS flash.
 void nvs_init(void);

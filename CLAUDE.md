@@ -34,8 +34,8 @@ pio run -t upload && pio device monitor
 
 `main.c` checks NVS for stored Wi-Fi credentials at boot and branches into one of two modes:
 
-- **Setup mode** (no credentials): Broadcasts `WifiTree-Setup` AP, spoofs all DNS to self, serves a network-picker wizard at `/`. `POST /save` stores credentials and reboots.
-- **Portal mode** (credentials found): Connects to uplink as STA, enables NAPT, broadcasts `WifiTree` AP, spoofs only captive-portal probe domains to self (forwards everything else to 8.8.8.8), serves the leaf-growing portal at `/`.
+- **Setup mode** (no credentials): Broadcasts `wifi.tree-setup` AP, spoofs all DNS to self, serves a network-picker wizard at `/`. `POST /save` stores credentials and reboots.
+- **Portal mode** (credentials found): Connects to uplink as STA, enables NAPT, broadcasts `wifi.tree` AP, spoofs only captive-portal probe domains to self (forwards everything else to 8.8.8.8), serves the leaf-growing portal at `/`.
 
 Key source files:
 - `src/main.c` — boot entry, mode decision

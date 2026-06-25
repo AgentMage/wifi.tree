@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wifi Tree web admin panel — LAN-side only, password protected.
+"""wifi.tree web admin panel — LAN-side only, password protected.
 
 Run with no args to serve. Run with --set-password to (re)set the admin
 password interactively. Listens on :8090 on every interface but refuses any
@@ -66,7 +66,7 @@ def load_conf():
 def save_password(pw):
     os.makedirs(os.path.dirname(CONF), exist_ok=True)
     with open(CONF, "w") as f:
-        f.write("# Wifi Tree web admin config\n")
+        f.write("# wifi.tree web admin config\n")
         f.write(f"password_hash = {hash_password(pw)}\n")
     os.chmod(CONF, 0o600)
 
@@ -294,9 +294,9 @@ def page(title, body):
 
 def login_page(err=""):
     e = f'<p class="err">{html.escape(err)}</p>' if err else ""
-    return page("Wifi Tree Admin", f"""
+    return page("wifi.tree Admin", f"""
 <div class="login">
-  <h1>🌳 Wifi Tree</h1>
+  <h1>🌳 wifi.tree</h1>
   <p class="muted" style="text-align:center">admin panel</p>
   {e}
   <form method="POST" action="/login">
@@ -309,9 +309,9 @@ def login_page(err=""):
 def change_password_page(err="", ok=""):
     e = f'<p class="err">{html.escape(err)}</p>' if err else ""
     o = f'<p class="ok-msg">{html.escape(ok)}</p>' if ok else ""
-    return page("Wifi Tree Admin — change password", f"""
+    return page("wifi.tree Admin — change password", f"""
 <header>
-  <h1>🌳 Wifi Tree — admin</h1>
+  <h1>🌳 wifi.tree — admin</h1>
   <a href="/">&larr; back to dashboard</a>
 </header>
 <div class="login" style="margin-top:6vh">
@@ -339,9 +339,9 @@ def customize_page(cfg, ok=""):
     picks = "".join(
         f'<button type="button" onclick="setEmoji(this.textContent)">{em}</button>'
         for em in FESTIVAL_EMOJI)
-    return page("Wifi Tree Admin — customize portal", f"""
+    return page("wifi.tree Admin — customize portal", f"""
 <header>
-  <h1>🌳 Wifi Tree — admin</h1>
+  <h1>🌳 wifi.tree — admin</h1>
   <a href="/">&larr; back to dashboard</a>
 </header>
 <div class="wrap" style="max-width:560px">
@@ -436,9 +436,9 @@ def settings_page(ok=""):
     bw_val = f"{bw_kbps:g}"
     ck = lambda on: "checked" if on else ""
     dis = lambda on: "" if on else "disabled"
-    return page("Wifi Tree Admin — global settings", f"""
+    return page("wifi.tree Admin — global settings", f"""
 <header>
-  <h1>🌳 Wifi Tree — admin</h1>
+  <h1>🌳 wifi.tree — admin</h1>
   <a href="/">&larr; back to dashboard</a>
 </header>
 <div class="wrap" style="max-width:560px">
@@ -483,13 +483,13 @@ def settings_page(ok=""):
     <p class="muted">Unchecked = <b>uncapped</b> per device (they share the
     AP-wide pool, ~20 Mbit). 100 kbps is the gentle default.</p>
 
-    <label>AP — broadcast the "Wifi Tree" network</label>
+    <label>AP — broadcast the "wifi.tree" network</label>
     <div class="setrow">
       <label class="toggle"><input type="checkbox" name="ap_on" {ck(ap_on)}
         onchange="this.form.querySelector('#ap-warn').style.display=this.checked?'none':'block'">
         AP on</label>
     </div>
-    <p class="muted">Uncheck to shut down the "Wifi Tree" network immediately —
+    <p class="muted">Uncheck to shut down the "wifi.tree" network immediately —
     all connected devices will lose access.</p>
     <p id="ap-warn" class="muted" style="color:#ffd54f;{'' if not ap_on else 'display:none'}">
     ⚠ AP is currently off — save to turn it back on.</p>
@@ -568,9 +568,9 @@ def dashboard():
     if not users:
         rows = '<tr><td colspan="6" class="muted">No registered devices yet.</td></tr>'
 
-    return page("Wifi Tree Admin", f"""
+    return page("wifi.tree Admin", f"""
 <header>
-  <h1>🌳 Wifi Tree — admin</h1>
+  <h1>🌳 wifi.tree — admin</h1>
   <span><a href="/settings">settings</a> &nbsp;·&nbsp;
   <a href="/customize">customize portal</a> &nbsp;·&nbsp;
   <a href="/change-password">change password</a> &nbsp;·&nbsp;
@@ -585,7 +585,7 @@ def dashboard():
     <div class="stat"><div class="n">{len(users)}</div><div class="l">registered total</div></div>
     <div class="stat"><div class="n" id="c-total">{human_b(st['total_bytes'])}</div><div class="l">used since planted</div></div>
   </div>
-  <p class="muted" style="margin-top:-8px">🌱 Wifi Tree was planted on <b>{planted}</b> and has served
+  <p class="muted" style="margin-top:-8px">🌱 wifi.tree was planted on <b>{planted}</b> and has served
   <b id="c-total2">{human_b(st['total_bytes'])}</b> of data to the gathering since.</p>
 
   <h2>Connected devices <span class="muted" id="live-age"></span></h2>

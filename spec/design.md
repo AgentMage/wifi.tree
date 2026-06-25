@@ -20,7 +20,7 @@ Canonical stylesheet: [`design.css`](design.css)
 ## Copy Strings (defaults)
 
 ```
-title:           Wifi Tree
+title:           wifi.tree
 emoji:           🌳
 tagline:         community wifi · please be mindful, it's shared
 welcome_heading: Welcome to the gathering 🌿
@@ -45,7 +45,7 @@ All strings are operator-configurable except `button_label`, `success_sub`,
 
 ```
 🌳
-Wifi Tree
+wifi.tree
 community wifi · please be mindful, it's shared
 
 ┌─ card ──────────────────────────────────┐
@@ -66,7 +66,7 @@ Be kind, keep it light.
 
 ```
 🌳
-Wifi Tree
+wifi.tree
 community wifi · please be mindful, it's shared
 
 ┌─ card ok leafy ─────────────────────────┐

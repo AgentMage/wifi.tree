@@ -19,12 +19,12 @@ void app_main(void) {
         const char *networks = wifi_start_setup();
         dns_server_start(wifi_ap_ip(), true);   // spoof everything — no internet anyway
         http_server_start_setup(networks);
-        ESP_LOGI(TAG, "Connect to '%s' and open any page", "WifiTree-Setup");
+        ESP_LOGI(TAG, "Connect to '%s' and open any page", "wifi.tree-setup");
     } else {
         ESP_LOGI(TAG, "=== PORTAL MODE === uplink: %s", ssid);
         wifi_start_portal(ssid, pass);
         dns_server_start(wifi_ap_ip(), false);  // spoof captive domains, forward the rest
         http_server_start_portal();
-        ESP_LOGI(TAG, "Connect to '%s'", "WifiTree");
+        ESP_LOGI(TAG, "Connect to '%s'", "wifi.tree");
     }
 }

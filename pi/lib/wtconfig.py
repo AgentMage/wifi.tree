@@ -10,7 +10,7 @@ CONFIG_PATH = "/etc/wifitree/portal.json"
 
 DEFAULTS = {
     "emoji": "🌳",
-    "title": "Wifi Tree",
+    "title": "wifi.tree",
     "tagline": "community wifi · please be mindful, it's shared",
     "banner": "",  # optional announcement; shown on the portal when non-empty
     "welcome_heading": "Welcome to the gathering 🌿",

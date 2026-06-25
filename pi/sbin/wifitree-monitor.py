@@ -130,7 +130,7 @@ def main():
         cols = shutil.get_terminal_size((100, 20)).columns
         sys.stdout.write("\033[H\033[J")
         print("=" * min(cols, 100))
-        print(f" WIFI TREE  --  SSID: Wifi Tree  channel {current_channel()}  --  {len(rows)} client(s) connected")
+        print(f" wifi.tree  --  SSID: wifi.tree  channel {current_channel()}  --  {len(rows)} client(s) connected")
         print(f" shaper: down {cake_down['bw']} (sent {humanb(cake_down['sent_bytes'])}, dropped {cake_down['dropped']}, backlog {cake_down['backlog']})")
         print(f"         up   {cake_up['bw']} (sent {humanb(cake_up['sent_bytes'])}, dropped {cake_up['dropped']}, backlog {cake_up['backlog']})")
         print(f" aggregate now: down {human(total_down_rate)}  up {human(total_up_rate)}")

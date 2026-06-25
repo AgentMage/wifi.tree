@@ -12,7 +12,7 @@ runs out, be kind.
 ```
 [client device]
       |
-      | 802.11  (SSID: WifiTree, AP IP: 10.42.0.1)
+      | 802.11  (SSID: wifi.tree, AP IP: 10.42.0.1)
       |
 [Wifi Tree device]  ←→  upstream internet via uplink interface
       |
@@ -51,7 +51,7 @@ Accept `name` field (max 40 chars). Register the visitor, show success screen.
 ## Setup Wizard
 
 When no uplink credentials are stored:
-1. Broadcast `WifiTree-Setup` AP
+1. Broadcast `wifi.tree-setup` AP
 2. Serve a page listing nearby networks (scanned at boot)
 3. User picks SSID + enters password → `POST /save`
 4. Save credentials to persistent storage
@@ -73,7 +73,7 @@ everyone sees the new-visitor flow and gets a fresh leaf on each visit.
 
 | Key | Default | Description |
 |---|---|---|
-| `title` | `Wifi Tree` | Page `<title>` and `<h1>` |
+| `title` | `wifi.tree` | Page `<title>` and `<h1>` |
 | `emoji` | `🌳` | Logo character |
 | `tagline` | `community wifi · please be mindful, it's shared` | Subheading |
 | `welcome_heading` | `Welcome to the gathering 🌿` | Heading on new-visitor card |
