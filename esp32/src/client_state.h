@@ -81,6 +81,14 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo);
 // MAC isn't in the table.
 uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps);
 
+// Rename a visitor (keyed by MAC). Marks the table dirty. No-op if not found.
+void clients_set_name_by_mac(const uint8_t mac[6], const char *name);
+
+// Forget a visitor entirely (keyed by MAC): clears their record. Returns their
+// current IP (network byte order, 0 if unknown) so the caller can revoke any
+// internet grant. Marks the table dirty.
+uint32_t clients_remove_by_mac(const uint8_t mac[6]);
+
 // Reset a visitor's time budget: zero their accumulated connected time and
 // lift any ban, so they can grow a leaf again. Keyed by MAC (persistent), so
 // it works for offline or post-reboot visitors whose IP is unknown. No-op if

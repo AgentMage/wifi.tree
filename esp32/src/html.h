@@ -156,6 +156,7 @@ static const char PORTAL_CSS_STR[] = PORTAL_CSS;
   "<nav><a href='/admin'>dashboard</a> &middot; " \
   "<a href='/admin/settings'>settings</a> &middot; " \
   "<a href='/admin/customize'>customize</a> &middot; " \
+  "<a href='/admin/password'>password</a> &middot; " \
   "<a href='/admin/logout'>log out</a></nav>"
 
 // Emoji quick-pick buttons for the customize page (UTF-8 literals).

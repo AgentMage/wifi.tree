@@ -520,8 +520,9 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
     for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
-        char nm[128], hn[128], machex[13];
+        char nm[128], rawnm[128], hn[128], machex[13];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
+        html_escape(rawnm, sizeof(rawnm), list[i].name);   // for the rename input
         html_escape(hn, sizeof(hn), list[i].hostname);
         mac_to_hex(machex, list[i].mac);
         int left = client_leaf_seconds_left(&list[i], ttl);
@@ -565,6 +566,16 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             nm, pill, status,
             hn[0] ? hn : "", hn[0] ? " &middot; " : "", budget, data, capstr);
 
+        // Rename — MAC-keyed.
+        o += snprintf(body + o, BODY_SZ - o,
+            "<form method='POST' action='/admin/rename' "
+            "style='display:flex;gap:6px;margin:0;flex:1;min-width:150px'>"
+            "<input type='hidden' name='mac' value='%s'>"
+            "<input type='text' name='name' value='%s' placeholder='(no name)' "
+            "maxlength='40' style='margin:0;flex:1'>"
+            "<button class='sec' style='margin:0'>Save</button></form>",
+            machex, rawnm);
+
         // Per-user speed cap — MAC-keyed (persists, works offline). Blank = default.
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/userspeed' "
@@ -587,9 +598,13 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/resettime' style='margin:0'>"
             "<input type='hidden' name='mac' value='%s'>"
-            "<button class='sec' style='margin:0'>Reset</button>"
+            "<button class='sec' style='margin:0'>Reset</button></form>"
+            "<form method='POST' action='/admin/forget' style='margin:0' "
+            "onsubmit='return confirm(\"Forget this visitor entirely?\")'>"
+            "<input type='hidden' name='mac' value='%s'>"
+            "<button class='danger' style='margin:0'>Forget</button>"
             "</form></div></div>",
-            machex);
+            machex, machex);
     }
     if (n == 0)
         o += snprintf(body + o, BODY_SZ - o,
@@ -604,30 +619,54 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     return r;
 }
 
-// GET /admin/settings — the global settings form on its own themed page.
+// GET /admin/settings — global settings with on/off toggles + reset.
 static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
     if (!config_has_admin_password() || !admin_authed(req))
         return redirect_to(req, "/admin", NULL);
-    char body[1400];
+
+    int ttl = config_leaf_ttl_seconds(), kbps = config_client_kbps();
+    int tcap = config_connected_cap_seconds(), dcap = config_data_cap_mb();
+    // When a knob is off (0), pre-fill a sensible value for when it's re-enabled.
+    int ttl_v  = ttl  > 0 ? ttl / 60   : 180;
+    int kbps_v = kbps > 0 ? kbps       : 100;
+    int tcap_v = tcap > 0 ? tcap / 60  : 60;
+    int dcap_v = dcap > 0 ? dcap       : 100;
+    const char *ttl_ck  = ttl  > 0 ? "checked" : "", *ttl_dis  = ttl  > 0 ? "" : "disabled";
+    const char *kbps_ck = kbps > 0 ? "checked" : "", *kbps_dis = kbps > 0 ? "" : "disabled";
+    const char *tcap_ck = tcap > 0 ? "checked" : "", *tcap_dis = tcap > 0 ? "" : "disabled";
+    const char *dcap_ck = dcap > 0 ? "checked" : "", *dcap_dis = dcap > 0 ? "" : "disabled";
+
+    char body[2200];
     int len = snprintf(body, sizeof(body),
         "<h2>Settings</h2>"
-        "<div class='card2'>"
-        "<form method='POST' action='/admin/settings'>"
-        "<label class='muted'>Leaf freshness (minutes, 0 = never)</label><br>"
-        "<input type='number' name='ttl_min' min='0' value='%d' style='width:120px'><br><br>"
-        "<label class='muted'>Default speed per device (kbps, 0 = uncapped)</label><br>"
-        "<input type='number' name='kbps' min='0' value='%d' style='width:120px'><br><br>"
-        "<label class='muted'>Connected-time budget per visitor (minutes, 0 = unlimited)</label><br>"
-        "<input type='number' name='tcap_min' min='0' value='%d' style='width:120px'><br><br>"
-        "<label class='muted'>Data budget per visitor (MB, 0 = unlimited)</label><br>"
-        "<input type='number' name='dcap_mb' min='0' value='%d' style='width:120px'><br><br>"
-        "<button type='submit'>Save settings</button>"
+        "<div class='card2'><form class='cust' method='POST' action='/admin/settings'>"
+        "<label>Leaf freshness</label>"
+        "<div><label><input type='checkbox' name='leaf_on' %s onchange=\"t(this,'i_ttl')\"> "
+        "leaves expire</label> "
+        "<input type='number' id='i_ttl' name='ttl_min' min='1' value='%d' %s style='width:90px'> min</div>"
+        "<label>Default speed per device</label>"
+        "<div><label><input type='checkbox' name='kbps_on' %s onchange=\"t(this,'i_kbps')\"> "
+        "cap speed</label> "
+        "<input type='number' id='i_kbps' name='kbps' min='1' value='%d' %s style='width:90px'> kbps</div>"
+        "<label>Connected-time budget per visitor</label>"
+        "<div><label><input type='checkbox' name='tcap_on' %s onchange=\"t(this,'i_tcap')\"> "
+        "limit time</label> "
+        "<input type='number' id='i_tcap' name='tcap_min' min='1' value='%d' %s style='width:90px'> min</div>"
+        "<label>Data budget per visitor</label>"
+        "<div><label><input type='checkbox' name='dcap_on' %s onchange=\"t(this,'i_dcap')\"> "
+        "limit data</label> "
+        "<input type='number' id='i_dcap' name='dcap_mb' min='1' value='%d' %s style='width:90px'> MB</div>"
+        "<div style='margin-top:18px'><button type='submit'>Save settings</button></div>"
         "</form></div>"
-        "<p class='muted'>Speed caps each visitor up and down. The time and data "
-        "budgets are lifetime totals &mdash; past either, a visitor is cut off "
-        "until you Reset them on the dashboard.</p>",
-        config_leaf_ttl_seconds() / 60, config_client_kbps(),
-        config_connected_cap_seconds() / 60, config_data_cap_mb());
+        "<form method='POST' action='/admin/settings' style='margin-top:6px' "
+        "onsubmit='return confirm(\"Reset settings to defaults?\")'>"
+        "<input type='hidden' name='action' value='reset'>"
+        "<button class='sec'>Reset to defaults</button></form>"
+        "<p class='muted'>Unchecked = off (leaves never expire / speed uncapped / "
+        "budget unlimited). Time and data budgets are lifetime totals.</p>"
+        "<script>function t(cb,id){document.getElementById(id).disabled=!cb.checked}</script>",
+        ttl_ck, ttl_v, ttl_dis, kbps_ck, kbps_v, kbps_dis,
+        tcap_ck, tcap_v, tcap_dis, dcap_ck, dcap_v, dcap_dis);
     return send_admin(req, body, len);
 }
 
@@ -837,16 +876,69 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     char rbody[256] = {0};
     int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
     if (n > 0) rbody[n] = '\0';
-    char ttl[16] = {0}, kbps[16] = {0}, tcap[16] = {0}, dcap[16] = {0};
-    get_field(rbody, "ttl_min",  ttl,  sizeof(ttl));
-    get_field(rbody, "kbps",     kbps, sizeof(kbps));
-    get_field(rbody, "tcap_min", tcap, sizeof(tcap));
-    get_field(rbody, "dcap_mb",  dcap, sizeof(dcap));
-    if (ttl[0])  config_set_leaf_ttl_seconds(atoi(ttl) * 60);
-    if (kbps[0]) config_set_client_kbps(atoi(kbps));
-    if (tcap[0]) config_set_connected_cap_seconds(atoi(tcap) * 60);
-    if (dcap[0]) config_set_data_cap_mb(atoi(dcap));
+
+    char act[16] = {0};
+    get_field(rbody, "action", act, sizeof(act));
+    if (strcmp(act, "reset") == 0) {              // factory defaults
+        config_set_leaf_ttl_seconds(3 * 3600);
+        config_set_client_kbps(100);
+        config_set_connected_cap_seconds(0);
+        config_set_data_cap_mb(0);
+        return redirect_to(req, "/admin/settings", NULL);
+    }
+
+    // A checkbox absent from the POST (its number input is disabled, so the
+    // browser omits both) means that knob is turned off → store 0.
+    char on[8], v[16];
+    get_field(rbody, "leaf_on", on, sizeof(on));
+    get_field(rbody, "ttl_min", v, sizeof(v));
+    config_set_leaf_ttl_seconds(on[0] ? atoi(v) * 60 : 0);
+    get_field(rbody, "kbps_on", on, sizeof(on));
+    get_field(rbody, "kbps", v, sizeof(v));
+    config_set_client_kbps(on[0] ? atoi(v) : 0);
+    get_field(rbody, "tcap_on", on, sizeof(on));
+    get_field(rbody, "tcap_min", v, sizeof(v));
+    config_set_connected_cap_seconds(on[0] ? atoi(v) * 60 : 0);
+    get_field(rbody, "dcap_on", on, sizeof(on));
+    get_field(rbody, "dcap_mb", v, sizeof(v));
+    config_set_data_cap_mb(on[0] ? atoi(v) : 0);
     return redirect_to(req, "/admin/settings", NULL);
+}
+
+// POST /admin/rename — rename a visitor (MAC-keyed).
+static esp_err_t admin_rename_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[256] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0}, name[64] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    get_field(rbody, "name", name, sizeof(name));
+    name[40] = '\0';
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        clients_set_name_by_mac(mac, name);
+        clients_flush();
+    }
+    return redirect_to(req, "/admin", NULL);
+}
+
+// POST /admin/forget — drop a visitor's record entirely and cut them off.
+static esp_err_t admin_forget_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        uint32_t ip = clients_remove_by_mac(mac);
+        if (ip) authz_revoke(ip);
+        clients_flush();
+        ESP_LOGI(TAG, "admin forgot %s", machex);
+    }
+    return redirect_to(req, "/admin", NULL);
 }
 
 // Reset one visitor's connected-time budget (and lift any over-budget ban).
@@ -904,6 +996,60 @@ static esp_err_t admin_userspeed_handler(httpd_req_t *req) {
     return redirect_to(req, "/admin", NULL);
 }
 
+// Render the change-password page, optionally with a status message.
+static esp_err_t send_password_page(httpd_req_t *req, const char *msg, bool err) {
+    char body[1000];
+    int len = snprintf(body, sizeof(body),
+        "<h2>Change admin password</h2>"
+        "%s%s%s"
+        "<div class='card2'><form method='POST' action='/admin/password'>"
+        "<input type='password' name='current' placeholder='current password' "
+        "required style='width:100%%;max-width:320px'><br><br>"
+        "<input type='password' name='new1' placeholder='new password (min 8)' "
+        "required style='width:100%%;max-width:320px'><br><br>"
+        "<input type='password' name='new2' placeholder='repeat new password' "
+        "required style='width:100%%;max-width:320px'><br><br>"
+        "<button type='submit'>Change password</button>"
+        "</form></div>"
+        "<p class='muted'>Changing it signs out other devices.</p>",
+        msg[0] ? (err ? "<p style='color:#ff8a80'>" : "<p style='color:#8ef08e'>") : "",
+        msg, msg[0] ? "</p>" : "");
+    return send_admin(req, body, len);
+}
+
+static esp_err_t admin_password_get_handler(httpd_req_t *req) {
+    if (!config_has_admin_password() || !admin_authed(req))
+        return redirect_to(req, "/admin", NULL);
+    return send_password_page(req, "", false);
+}
+
+static esp_err_t admin_password_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[256] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char cur[64] = {0}, n1[64] = {0}, n2[64] = {0};
+    get_field(rbody, "current", cur, sizeof(cur));
+    get_field(rbody, "new1", n1, sizeof(n1));
+    get_field(rbody, "new2", n2, sizeof(n2));
+
+    if (!config_check_admin_password(cur))
+        return send_password_page(req, "Current password is wrong.", true);
+    if (strlen(n1) < 8)
+        return send_password_page(req, "New password must be at least 8 characters.", true);
+    if (strcmp(n1, n2) != 0)
+        return send_password_page(req, "New passwords don't match.", true);
+
+    config_set_admin_password(n1);
+    // Sign out every other session (keep the one making the change).
+    char tok[33];
+    bool have = admin_cookie(req, tok);
+    for (int s = 0; s < MAX_SESS; s++)
+        if (!have || strcmp(s_sess[s].tok, tok) != 0) s_sess[s].exp_us = 0;
+    ESP_LOGI(TAG, "admin password changed");
+    return send_password_page(req, "Password changed. Other devices signed out.", false);
+}
+
 static esp_err_t admin_logout_handler(httpd_req_t *req) {
     char tok[33];
     if (admin_cookie(req, tok))
@@ -940,7 +1086,7 @@ void http_server_start_setup(const char *networks_html) {
 void http_server_start_portal(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 24;
     cfg.stack_size = 8192;   // headroom for admin handlers (default 4096 too tight)
 
     httpd_handle_t server;
@@ -962,6 +1108,10 @@ void http_server_start_portal(void) {
         { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
         { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
         { .uri = "/admin/resettime",.method = HTTP_POST, .handler = admin_resettime_handler },
+        { .uri = "/admin/rename",   .method = HTTP_POST, .handler = admin_rename_handler },
+        { .uri = "/admin/forget",   .method = HTTP_POST, .handler = admin_forget_handler },
+        { .uri = "/admin/password", .method = HTTP_GET,  .handler = admin_password_get_handler },
+        { .uri = "/admin/password", .method = HTTP_POST, .handler = admin_password_handler },
         { .uri = "/admin/logout",   .method = HTTP_GET,  .handler = admin_logout_handler },
     };
     for (int i = 0; i < (int)(sizeof(admin) / sizeof(admin[0])); i++)

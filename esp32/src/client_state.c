@@ -274,6 +274,33 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo) {
     xSemaphoreGive(s_lock);
 }
 
+void clients_set_name_by_mac(const uint8_t mac[6], const char *name) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            strlcpy(s_clients[i].name, name, sizeof(s_clients[i].name));
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+}
+
+uint32_t clients_remove_by_mac(const uint8_t mac[6]) {
+    uint32_t ip = 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            ip = s_clients[i].ip;
+            memset(&s_clients[i], 0, sizeof(s_clients[i]));
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+    return ip;
+}
+
 uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps) {
     uint32_t ip = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
