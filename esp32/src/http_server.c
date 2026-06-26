@@ -2,6 +2,7 @@
 #include "wifi_manager.h"
 #include "client_state.h"
 #include "config.h"
+#include "authz.h"
 #include "html.h"
 #include <string.h>
 #include <stdlib.h>
@@ -259,9 +260,16 @@ static esp_err_t portal_post_handler(httpd_req_t *req) {
     }
     name[40] = '\0'; // spec max
 
-    // Record the leaf against this client so revisits show the status card.
-    client_t *c = clients_find_by_ip(client_ip(req));
+    // Record the leaf against this client so revisits show the status card,
+    // and open the internet gate for this IP until the leaf expires.
+    uint32_t ip = client_ip(req);
+    client_t *c = clients_find_by_ip(ip);
     if (c) clients_grow_leaf(c, name);
+    if (ip) {
+        int ttl = config_leaf_ttl_seconds();
+        int64_t expiry = ttl <= 0 ? 0 : esp_timer_get_time() + (int64_t)ttl * 1000000;
+        authz_grant(ip, expiry);
+    }
 
     char safe_name[320]; // max 40 chars × 6 bytes worst-case HTML escaping + NUL
     html_escape(safe_name, sizeof(safe_name), name);

@@ -37,6 +37,7 @@ setup mode, slow while connecting, and stays solid once the uplink is up.
 |---|---|---|
 | Per-user tracking | SQLite by MAC | RAM only, lost on reboot |
 | Returning-visitor status card | Yes | Yes (name, hostname, freshness) |
+| Internet gated by leaf | Yes | Yes (lwIP forward hook, on/off) |
 | Leaf expiry | Yes | Yes (TTL, admin-configurable) |
 | Data metering / quota | Yes | No |
 | Bandwidth shaping | `tc` per client | No |

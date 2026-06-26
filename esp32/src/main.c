@@ -3,6 +3,7 @@
 #include "http_server.h"
 #include "client_state.h"
 #include "config.h"
+#include "authz.h"
 #include "reset_button.h"
 #include "led.h"
 #include "freertos/FreeRTOS.h"
@@ -24,6 +25,7 @@ void app_main(void) {
     config_init();
     led_init();
     clients_init();
+    authz_init();
 
     char ssid[64] = {0}, pass[64] = {0};
     bool has_creds = wifi_load_credentials(ssid, sizeof(ssid), pass, sizeof(pass));
