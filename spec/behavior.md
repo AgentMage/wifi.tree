@@ -66,12 +66,19 @@ When no uplink credentials are stored:
 | Expired | Leaf TTL elapsed | Expired card + extend form |
 | Over quota | Monthly data cap hit | Over-quota card, no button |
 
-The ESP32 implementation tracks visitors in RAM only (keyed by MAC, lost on
-reboot — no SQLite, no monthly quota). It implements the New, Active, and
-Expired states: a returning visitor with a fresh leaf sees a status card with
-their name, hostname, and remaining freshness. It has no Over-quota state
-(no data metering). Operators get a password-gated admin page at
-`wifi.tree/admin` to view connected visitors and set the leaf TTL.
+The ESP32 implementation keeps a per-MAC visitor table that **persists across
+reboots** in NVS (identity + lifetime fields: name, hostname, total connected
+time, banned flag; leaf/session timers stay RAM-only and reset on reboot). It
+has no SQLite and no monthly *data* quota, but it does enforce a per-visitor
+lifetime **connected-time budget** in place of the Pi's monthly data cap — the
+ESP32 has no wall clock, so it counts elapsed online time instead of calendar
+months. It implements the New, Active, and Expired states (a returning visitor
+with a fresh leaf sees a status card with their name, hostname, and remaining
+freshness), plus an **Over-budget** state: once a visitor's accumulated online
+time reaches the configured cap they're cut off and shown a "your leaf has
+fallen" card until an operator resets them. Operators get a password-gated admin
+page at `wifi.tree/admin` to view visitors, set the leaf TTL / speed cap /
+time budget, kick or speed-override a visitor, and reset a visitor's time.
 
 Internet access **is gated by the leaf**: a custom lwIP IPv4 forwarding hook
 (`LWIP_HOOK_IP4_CANFORWARD`) drops uplink-bound packets from any AP client that
@@ -81,7 +88,11 @@ resolve names — they just can't reach the internet until they grow a leaf, and
 lose it again when the leaf expires. The same hook applies a per-client
 token-bucket **bandwidth cap** (default 100 kbps each way, operator-configurable
 at `wifi.tree/admin`) — deliberately slow, since the point is gentle shared
-woods wifi, not fast internet. There is still no monthly data quota (Pi-only).
+woods wifi, not fast internet. Instead of the Pi's monthly *data* quota, the
+ESP32 enforces a lifetime **connected-time budget**: a 30s accounting task
+credits online time to each visitor (persisted to flash), and once a visitor
+passes the operator-set cap the forwarding hook stops carrying their traffic
+(they're "over budget") until reset. Monthly *data* metering remains Pi-only.
 
 ## Configurable Parameters
 

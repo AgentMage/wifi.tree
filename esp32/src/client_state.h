@@ -56,6 +56,12 @@ int clients_snapshot(client_t *out, int max);
 // order), so they revert to the new-visitor flow. No-op if not found.
 void clients_clear_leaf_by_ip(uint32_t ip_nbo);
 
+// Reset a visitor's time budget: zero their accumulated connected time and
+// lift any ban, so they can grow a leaf again. Keyed by MAC (persistent), so
+// it works for offline or post-reboot visitors whose IP is unknown. No-op if
+// the MAC isn't in the table. Marks the table dirty.
+void clients_reset_budget_by_mac(const uint8_t mac[6]);
+
 // Accounting tick: credit `elapsed_s` of online time to every visitor whose
 // leaf is currently active (ttl_s = leaf TTL used to judge "online"). If
 // cap_s > 0, any visitor reaching the cap is banned and their leaf cleared;

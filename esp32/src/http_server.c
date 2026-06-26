@@ -109,6 +109,28 @@ static void get_field(const char *body, const char *key, char *out, size_t outle
     urldecode(out, outlen, raw);
 }
 
+// 6-byte MAC <-> 12-char lowercase hex (no separators), for admin form values.
+static void mac_to_hex(char out[13], const uint8_t mac[6]) {
+    static const char *H = "0123456789abcdef";
+    for (int i = 0; i < 6; i++) {
+        out[i * 2]     = H[mac[i] >> 4];
+        out[i * 2 + 1] = H[mac[i] & 0xF];
+    }
+    out[12] = '\0';
+}
+
+// Parse 12 hex chars into mac[6]. Returns false unless exactly 12 hex digits.
+static bool hex_to_mac(const char *s, uint8_t mac[6]) {
+    for (int i = 0; i < 12; i++)
+        if (!isxdigit((unsigned char)s[i])) return false;
+    if (s[12] != '\0') return false;
+    for (int i = 0; i < 6; i++) {
+        char b[3] = { s[i * 2], s[i * 2 + 1], 0 };
+        mac[i] = (uint8_t)strtol(b, NULL, 16);
+    }
+    return true;
+}
+
 // Escapes <, >, &, ", ' for safe HTML embedding of user-supplied strings.
 static void html_escape(char *dst, size_t dstsz, const char *src) {
     size_t i = 0;
@@ -341,7 +363,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
 
     // Heap-allocate the large buffers — too big for the httpd task stack.
-    const int BODY_SZ = 12288;
+    const int BODY_SZ = 16384;
     client_t *list = malloc(sizeof(client_t) * 16);
     char *body = malloc(BODY_SZ);
     if (!list || !body) {
@@ -363,38 +385,56 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<input type='number' name='ttl_min' min='0' value='%d'>"
         "<label style='font-size:13px;opacity:.7'>Per-device speed (kbps, 0 = uncapped)</label>"
         "<input type='number' name='kbps' min='0' value='%d'>"
+        "<label style='font-size:13px;opacity:.7'>Connected-time budget per visitor "
+        "(minutes, 0 = unlimited)</label>"
+        "<input type='number' name='tcap_min' min='0' value='%d'>"
         "<button type='submit'>Save</button>"
         "</form>"
-        "<p class='note'>Each visitor is capped to this speed up and down.</p>"
+        "<p class='note'>Speed caps each visitor up and down. The time budget is "
+        "lifetime online minutes &mdash; past it, they're cut off until you reset them.</p>"
         "</div>"
         "<div class='card'>"
-        "<p class='headline' style='font-size:1em'>Visitors this session</p>",
+        "<p class='headline' style='font-size:1em'>Visitors</p>",
         wifi_has_uplink() ? "connected" : "connecting…",
-        clients_count(), ttl / 60, config_client_kbps());
+        clients_count(), ttl / 60, config_client_kbps(),
+        config_connected_cap_seconds() / 60);
 
-    for (int i = 0; i < n && o < BODY_SZ - 800; i++) {
-        char nm[128], hn[128];
+    int cap = config_connected_cap_seconds();
+    for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
+        char nm[128], hn[128], machex[13];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
         html_escape(hn, sizeof(hn), list[i].hostname);
+        mac_to_hex(machex, list[i].mac);
         int left = client_leaf_seconds_left(&list[i], ttl);
         char status[48];
-        if (list[i].leaf_grown_us == 0)       snprintf(status, sizeof(status), "no leaf");
+        if (list[i].banned)                   snprintf(status, sizeof(status), "over budget");
+        else if (list[i].leaf_grown_us == 0)  snprintf(status, sizeof(status), "no leaf");
         else if (!client_leaf_active(&list[i], ttl)) snprintf(status, sizeof(status), "expired");
         else if (ttl <= 0)                    snprintf(status, sizeof(status), "fresh");
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
 
+        // Lifetime online time, shown as "used N min" (with the cap if one is set).
+        char budget[40];
+        unsigned used_min = list[i].total_connected_s / 60;
+        if (cap > 0) snprintf(budget, sizeof(budget), "%u / %d min", used_min, cap / 60);
+        else         snprintf(budget, sizeof(budget), "%u min", used_min);
+
         o += snprintf(body + o, BODY_SZ - o,
             "<div style='border-top:1px solid #1f3d29;padding:10px 0'>"
-            "<p class='sub' style='margin:0 0 8px'>&#x1F33F; <strong>%s</strong>"
-            "%s%s <span style='opacity:.6'>&middot; %s</span></p>",
-            nm, hn[0] ? " &middot; " : "", hn, status);
+            "<p class='sub' style='margin:0 0 4px'>&#x1F33F; <strong>%s</strong>"
+            "%s%s <span style='opacity:.6'>&middot; %s</span></p>"
+            "<p class='sub' style='margin:0 0 8px;opacity:.6;font-size:13px'>"
+            "online %s</p>"
+            "<div style='display:flex;gap:6px;flex-wrap:wrap'>",
+            nm, hn[0] ? " &middot; " : "", hn,
+            list[i].banned ? "<span style='color:#d8b24a'>over budget</span>" : status,
+            budget);
 
-        if (list[i].ip) {  // controls need a known IP to target
+        if (list[i].ip) {  // live controls need a known IP to target
             unsigned long ip = (unsigned long)list[i].ip;
             o += snprintf(body + o, BODY_SZ - o,
-                "<div style='display:flex;gap:6px'>"
                 "<form method='POST' action='/admin/userspeed' "
-                "style='display:flex;gap:6px;margin:0;flex:1'>"
+                "style='display:flex;gap:6px;margin:0;flex:1;min-width:140px'>"
                 "<input type='hidden' name='ip' value='%lu'>"
                 "<input type='number' name='kbps' min='0' placeholder='kbps' "
                 "style='margin:0;flex:1'>"
@@ -402,10 +442,16 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
                 "<form method='POST' action='/admin/kick' style='margin:0'>"
                 "<input type='hidden' name='ip' value='%lu'>"
                 "<button style='margin:0;padding:10px 14px;background:#aa3333'>Kick</button>"
-                "</form></div>",
+                "</form>",
                 ip, ip);
         }
-        o += snprintf(body + o, BODY_SZ - o, "</div>");
+        // Reset-time is MAC-keyed so it works even when the visitor is offline.
+        o += snprintf(body + o, BODY_SZ - o,
+            "<form method='POST' action='/admin/resettime' style='margin:0'>"
+            "<input type='hidden' name='mac' value='%s'>"
+            "<button style='margin:0;padding:10px 12px;background:#1f3d29'>Reset time</button>"
+            "</form></div></div>",
+            machex);
     }
     if (n == 0)
         o += snprintf(body + o, BODY_SZ - o,
@@ -485,11 +531,30 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     char rbody[256] = {0};
     int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
     if (n > 0) rbody[n] = '\0';
-    char ttl[16] = {0}, kbps[16] = {0};
-    get_field(rbody, "ttl_min", ttl, sizeof(ttl));
-    get_field(rbody, "kbps",    kbps, sizeof(kbps));
+    char ttl[16] = {0}, kbps[16] = {0}, tcap[16] = {0};
+    get_field(rbody, "ttl_min",  ttl,  sizeof(ttl));
+    get_field(rbody, "kbps",     kbps, sizeof(kbps));
+    get_field(rbody, "tcap_min", tcap, sizeof(tcap));
     if (ttl[0])  config_set_leaf_ttl_seconds(atoi(ttl) * 60);
     if (kbps[0]) config_set_client_kbps(atoi(kbps));
+    if (tcap[0]) config_set_connected_cap_seconds(atoi(tcap) * 60);
+    return redirect_to(req, "/admin", NULL);
+}
+
+// Reset one visitor's connected-time budget (and lift any over-budget ban).
+static esp_err_t admin_resettime_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        clients_reset_budget_by_mac(mac);
+        clients_flush();
+        ESP_LOGI(TAG, "admin reset time budget for %s", machex);
+    }
     return redirect_to(req, "/admin", NULL);
 }
 
@@ -577,6 +642,7 @@ void http_server_start_portal(void) {
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },
         { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
         { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
+        { .uri = "/admin/resettime",.method = HTTP_POST, .handler = admin_resettime_handler },
         { .uri = "/admin/logout",   .method = HTTP_POST, .handler = admin_logout_handler },
     };
     for (int i = 0; i < (int)(sizeof(admin) / sizeof(admin[0])); i++)

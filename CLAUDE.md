@@ -42,16 +42,21 @@ Key source files:
 - `src/wifi_manager.c` — NVS credential storage, AP+STA setup, NAPT
 - `src/dns_server.c` — selective DNS spoofing (SERVFAIL fast-fail until uplink is up)
 - `src/http_server.c` — HTTP handlers: portal, setup wizard, and the `/admin` page
-- `src/client_state.c` — in-RAM per-MAC visitor table (name, hostname, leaf timestamp); maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`
-- `src/config.c` — NVS-backed leaf TTL + admin password (salted SHA-256 via PSA crypto)
-- `src/reset_button.c` — GPIO0 5s hold → factory reset
+- `src/client_state.c` — per-MAC visitor table; persistent fields (name, hostname, `total_connected_s`, `banned`) survive reboot in NVS namespace `users`, ephemeral fields (ip, leaf/seen timers) are RAM-only. Maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`. Dirty-flushed via `clients_flush()`
+- `src/accounting.c` — 30s task: credits online visitors' connected time, enforces the connected-time cap (bans + revokes over-budget visitors), flushes the table
+- `src/config.c` — NVS-backed leaf TTL, per-client kbps, connected-time cap (`tcap`), admin password (salted SHA-256 via PSA crypto)
+- `src/reset_button.c` — GPIO0 5s hold → factory reset (wipes `wifi`, `cfg`, `users`)
 - `src/led.c` — GPIO2 status LED (fast=setup, slow=connecting, solid=online)
 - `src/html.h` — HTML templates as C string literals; dynamic pages (status card, admin) reuse `PORTAL_HEAD`/`PORTAL_FOOT` chrome
 
-Unlike the spec's original "single-session" ESP32, the firmware now tracks
-visitors in RAM (keyed by MAC, cleared on reboot) so returning visitors with a
-fresh leaf get a status card, and operators get a password-gated `/admin` page.
-No SQLite, no data metering, no bandwidth shaping — those stay Pi-only.
+Unlike the spec's original "single-session" ESP32, the firmware tracks visitors
+in a per-MAC table that **persists across reboots** (NVS), so returning visitors
+get a status card and keep their accumulated connected time. Operators get a
+password-gated `/admin` page (leaf TTL, speed cap, time budget; per-visitor
+kick / speed-override / reset-time). In place of the Pi's monthly *data* quota
+the ESP32 enforces a lifetime **connected-time budget** (it has no wall clock,
+so it counts elapsed online time, not calendar months). Still Pi-only: SQLite,
+data-volume metering, tc/CAKE bandwidth shaping.
 
 `sdkconfig.defaults` enables lwIP NAPT (`CONFIG_LWIP_IP_NAPT=y`), required for internet forwarding. `src/CMakeLists.txt` declares explicit `REQUIRES` (incl. `mbedtls` for PSA crypto).
 

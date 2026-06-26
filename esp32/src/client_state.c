@@ -201,6 +201,19 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo) {
     xSemaphoreGive(s_lock);
 }
 
+void clients_reset_budget_by_mac(const uint8_t mac[6]) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            s_clients[i].total_connected_s = 0;
+            s_clients[i].banned = false;
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+}
+
 void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
                                  uint32_t *banned_out, int max, int *n_out) {
     int nb = 0;
