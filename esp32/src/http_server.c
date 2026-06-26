@@ -523,6 +523,14 @@ static esp_err_t send_admin_bare(httpd_req_t *req, const char *body, int len) {
     return ESP_OK;
 }
 
+// Which list a visitor belongs in: 0 = active now (fresh leaf), 1 = registered
+// (has a name but no active leaf), 2 = not yet registered (no name).
+static int visitor_group(const client_t *u, int ttl) {
+    if (client_leaf_active(u, ttl)) return 0;
+    if (u->name[0]) return 1;
+    return 2;
+}
+
 static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
 
@@ -552,16 +560,25 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<div class='stat'><div class='n' id='c-ch'>%d</div><div class='l'>channel</div></div>"
         "</div>"
         "<p class='muted' style='margin-top:-10px'>uplink: %s &middot; %d known visitor(s)</p>"
-        "<h2>Connected now</h2>"
+        "<h2>Live traffic</h2>"
         "<table><thead><tr><th>device</th><th>name</th><th>signal</th>"
         "<th>down</th><th>up</th><th>total</th></tr></thead>"
-        "<tbody id='live'><tr><td colspan='6' class='muted'>loading&hellip;</td></tr></tbody></table>"
-        "<h2>Visitors</h2>",
+        "<tbody id='live'><tr><td colspan='6' class='muted'>loading&hellip;</td></tr></tbody></table>",
         clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
-    for (int i = 0; i < n && o < BODY_SZ - 2400; i++) {
-        client_t *u = &list[i];
-        char nm[128], rawnm[128], hn[128], machex[13], macfmt[20], ago[24];
+    static const char *HEAD[3] = { "Active now", "Registered", "Not yet registered" };
+    for (int g = 0; g < 3 && o < BODY_SZ - 2400; g++) {
+        int members = 0;
+        for (int gi = 0; gi < n; gi++) if (visitor_group(&list[gi], ttl) == g) members++;
+        o += snprintf(body + o, BODY_SZ - o, "<h2>%s (%d)</h2>", HEAD[g], members);
+        if (!members) {
+            o += snprintf(body + o, BODY_SZ - o, "<p class='muted'>None.</p>");
+            continue;
+        }
+        for (int i = 0; i < n && o < BODY_SZ - 2400; i++) {
+            if (visitor_group(&list[i], ttl) != g) continue;
+            client_t *u = &list[i];
+            char nm[128], rawnm[128], hn[128], machex[13], macfmt[20], ago[24];
         html_escape(nm, sizeof(nm), u->name[0] ? u->name : "(no name yet)");
         html_escape(rawnm, sizeof(rawnm), u->name);   // for the rename input
         html_escape(hn, sizeof(hn), u->hostname);
@@ -688,10 +705,8 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             "<button class='danger'>Forget</button></form>"
             "</div></details></div>",
             machex);
+        }
     }
-    if (n == 0)
-        o += snprintf(body + o, BODY_SZ - o,
-            "<p class='muted'>No visitors yet.</p>");
 
     o += snprintf(body + o, BODY_SZ - o, "%s", ADMIN_DASH_JS);
 
