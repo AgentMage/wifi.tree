@@ -301,11 +301,19 @@ static esp_err_t send_admin_page(httpd_req_t *req, const char *body, int len) {
 
 static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
-    client_t list[16];
+
+    // Heap-allocate the large buffers — too big for the httpd task stack.
+    client_t *list = malloc(sizeof(client_t) * 16);
+    char *body = malloc(4096);
+    if (!list || !body) {
+        free(list); free(body);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+        return ESP_FAIL;
+    }
     int n = clients_snapshot(list, 16);
 
-    char body[4096];
-    int o = snprintf(body, sizeof(body),
+    const int BODY_SZ = 4096;
+    int o = snprintf(body, BODY_SZ,
         "<div class='card'>"
         "<p class='headline' style='color:#9fe89f'>Admin &#x1F510;</p>"
         "<p class='sub'>Uplink: <strong>%s</strong> &middot; %d device(s) connected</p>"
@@ -324,7 +332,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         wifi_has_uplink() ? "connected" : "connecting…",
         clients_count(), ttl / 60);
 
-    for (int i = 0; i < n && o < (int)sizeof(body) - 400; i++) {
+    for (int i = 0; i < n && o < BODY_SZ - 400; i++) {
         char nm[128], hn[128];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
         html_escape(hn, sizeof(hn), list[i].hostname);
@@ -335,21 +343,25 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         else if (ttl <= 0)                    snprintf(status, sizeof(status), "fresh");
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
 
-        o += snprintf(body + o, sizeof(body) - o,
+        o += snprintf(body + o, BODY_SZ - o,
             "<p class='sub' style='margin:0 0 8px'>&#x1F33F; <strong>%s</strong>"
             "%s%s <span style='opacity:.6'>&middot; %s</span></p>",
             nm, hn[0] ? " &middot; " : "", hn, status);
     }
     if (n == 0)
-        o += snprintf(body + o, sizeof(body) - o,
+        o += snprintf(body + o, BODY_SZ - o,
             "<p class='sub' style='opacity:.6'>Nobody yet.</p>");
 
-    o += snprintf(body + o, sizeof(body) - o,
+    o += snprintf(body + o, BODY_SZ - o,
         "</div>"
         "<form method='POST' action='/admin/logout'>"
         "<button type='submit' style='background:#1f3d29'>Log out</button></form>");
 
-    return send_admin_page(req, body, o);
+    if (o > BODY_SZ - 1) o = BODY_SZ - 1; // snprintf returns would-be length; clamp
+    esp_err_t r = send_admin_page(req, body, o);
+    free(list);
+    free(body);
+    return r;
 }
 
 static esp_err_t admin_get_handler(httpd_req_t *req) {
@@ -457,6 +469,7 @@ void http_server_start_portal(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.max_uri_handlers = 16;
+    cfg.stack_size = 8192;   // headroom for admin handlers (default 4096 too tight)
 
     httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
