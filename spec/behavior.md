@@ -88,7 +88,9 @@ resolve names — they just can't reach the internet until they grow a leaf, and
 lose it again when the leaf expires. The same hook applies a per-client
 token-bucket **bandwidth cap** (default 100 kbps each way, operator-configurable
 at `wifi.tree/admin`) — deliberately slow, since the point is gentle shared
-woods wifi, not fast internet. Instead of the Pi's monthly *data* quota, the
+woods wifi, not fast internet. Operators can also set a **per-visitor speed cap**
+that overrides the default for one device; like the time budget it's stored
+per-MAC and survives reboot (re-applied to the shaper when the device rejoins). Instead of the Pi's monthly *data* quota, the
 ESP32 enforces a lifetime **connected-time budget**: a 30s accounting task
 credits online time to each visitor (persisted to flash), and once a visitor
 passes the operator-set cap the forwarding hook stops carrying their traffic

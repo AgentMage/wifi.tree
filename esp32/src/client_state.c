@@ -1,5 +1,6 @@
 #include "client_state.h"
 #include "wifi_manager.h"
+#include "shaper.h"
 #include <string.h>
 #include "esp_wifi.h"
 #include "esp_netif.h"
@@ -14,6 +15,7 @@
 #define NVS_NS  "users"
 #define NVS_KEY "table"
 #define TAG     "clients"
+#define PERSIST_VER 2          // bump when persist_rec_t layout changes
 
 static client_t          s_clients[MAX_CLIENTS];
 static SemaphoreHandle_t s_lock;
@@ -26,7 +28,15 @@ typedef struct __attribute__((packed)) {
     char     hostname[33];
     uint32_t total_connected_s;
     uint8_t  banned;
+    int32_t  bw_cap_kbps;       // per-user speed cap: -1 = global default, 0 = uncapped
 } persist_rec_t;
+
+// Blob layout: [persist_hdr_t][persist_rec_t × count]. The version lets a
+// firmware with a changed record layout safely ignore an old-format blob.
+typedef struct __attribute__((packed)) {
+    uint16_t version;
+    uint16_t count;
+} persist_hdr_t;
 
 // Mark the table as needing a flush. Caller may or may not hold s_lock; setting
 // a bool is atomic enough that it doesn't matter.
@@ -40,22 +50,32 @@ void clients_init(void) {
     // Restore persisted records (identity + lifetime); ephemeral fields stay 0.
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
-    persist_rec_t recs[MAX_CLIENTS];
-    size_t len = sizeof(recs);
-    if (nvs_get_blob(h, NVS_KEY, recs, &len) == ESP_OK) {
-        int n = len / sizeof(persist_rec_t);
-        if (n > MAX_CLIENTS) n = MAX_CLIENTS;
-        for (int i = 0; i < n; i++) {
-            client_t *c = &s_clients[i];
-            memcpy(c->mac, recs[i].mac, 6);
-            strlcpy(c->name, recs[i].name, sizeof(c->name));
-            strlcpy(c->hostname, recs[i].hostname, sizeof(c->hostname));
-            c->total_connected_s = recs[i].total_connected_s;
-            c->banned = recs[i].banned;
-            c->first_seen_us = esp_timer_get_time();
-            c->used = true;
+    uint8_t buf[sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t)];
+    size_t len = sizeof(buf);
+    if (nvs_get_blob(h, NVS_KEY, buf, &len) == ESP_OK && len >= sizeof(persist_hdr_t)) {
+        persist_hdr_t hdr;
+        memcpy(&hdr, buf, sizeof(hdr));
+        if (hdr.version == PERSIST_VER) {
+            int n = hdr.count;
+            if (n > MAX_CLIENTS) n = MAX_CLIENTS;
+            for (int i = 0; i < n; i++) {
+                persist_rec_t r;
+                memcpy(&r, buf + sizeof(hdr) + i * sizeof(r), sizeof(r));
+                client_t *c = &s_clients[i];
+                memcpy(c->mac, r.mac, 6);
+                strlcpy(c->name, r.name, sizeof(c->name));
+                strlcpy(c->hostname, r.hostname, sizeof(c->hostname));
+                c->total_connected_s = r.total_connected_s;
+                c->banned = r.banned;
+                c->bw_cap_kbps = r.bw_cap_kbps;
+                c->first_seen_us = esp_timer_get_time();
+                c->used = true;
+            }
+            ESP_LOGI(TAG, "restored %d user record(s) from flash", n);
+        } else {
+            ESP_LOGW(TAG, "ignoring user blob (version %d, want %d)",
+                     hdr.version, PERSIST_VER);
         }
-        ESP_LOGI(TAG, "restored %d user record(s) from flash", n);
     }
     nvs_close(h);
 }
@@ -63,29 +83,36 @@ void clients_init(void) {
 void clients_flush(void) {
     if (!s_dirty) return;
 
-    // Snapshot the persistent fields under the lock, then write outside it so
-    // the (slowish) NVS commit doesn't block other client-table access.
-    persist_rec_t recs[MAX_CLIENTS];
-    int n = 0;
+    // Build the blob under the lock, then write outside it so the (slowish) NVS
+    // commit doesn't block other client-table access.
+    uint8_t buf[sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t)];
+    uint16_t n = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (!s_clients[i].used) continue;
-        memcpy(recs[n].mac, s_clients[i].mac, 6);
-        strlcpy(recs[n].name, s_clients[i].name, sizeof(recs[n].name));
-        strlcpy(recs[n].hostname, s_clients[i].hostname, sizeof(recs[n].hostname));
-        recs[n].total_connected_s = s_clients[i].total_connected_s;
-        recs[n].banned = s_clients[i].banned;
+        persist_rec_t r = {0};
+        memcpy(r.mac, s_clients[i].mac, 6);
+        strlcpy(r.name, s_clients[i].name, sizeof(r.name));
+        strlcpy(r.hostname, s_clients[i].hostname, sizeof(r.hostname));
+        r.total_connected_s = s_clients[i].total_connected_s;
+        r.banned = s_clients[i].banned;
+        r.bw_cap_kbps = s_clients[i].bw_cap_kbps;
+        memcpy(buf + sizeof(persist_hdr_t) + n * sizeof(r), &r, sizeof(r));
         n++;
     }
     s_dirty = false;
     xSemaphoreGive(s_lock);
+
+    persist_hdr_t hdr = { .version = PERSIST_VER, .count = n };
+    memcpy(buf, &hdr, sizeof(hdr));
 
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
         s_dirty = true;   // retry on the next tick
         return;
     }
-    if (nvs_set_blob(h, NVS_KEY, recs, n * sizeof(persist_rec_t)) == ESP_OK)
+    size_t blob_len = sizeof(persist_hdr_t) + n * sizeof(persist_rec_t);
+    if (nvs_set_blob(h, NVS_KEY, buf, blob_len) == ESP_OK)
         nvs_commit(h);
     else
         s_dirty = true;
@@ -103,6 +130,7 @@ static client_t *get_or_create(const uint8_t mac[6]) {
             memset(c, 0, sizeof(*c));
             memcpy(c->mac, mac, 6);
             c->used = true;
+            c->bw_cap_kbps = -1;        // use global default until set
             c->first_seen_us = esp_timer_get_time();
             mark_dirty();
             return c;
@@ -113,6 +141,7 @@ static client_t *get_or_create(const uint8_t mac[6]) {
     memset(oldest, 0, sizeof(*oldest));
     memcpy(oldest->mac, mac, 6);
     oldest->used = true;
+    oldest->bw_cap_kbps = -1;
     oldest->first_seen_us = esp_timer_get_time();
     mark_dirty();
     return oldest;
@@ -129,7 +158,13 @@ static void on_ip_assigned(void *arg, esp_event_base_t base,
         strlcpy(c->hostname, e->hostname, sizeof(c->hostname));
         mark_dirty();   // hostname is persistent
     }
+    int cap = c->bw_cap_kbps;
+    uint32_t ip = c->ip;
     xSemaphoreGive(s_lock);
+
+    // Re-apply this device's persisted speed cap to the shaper for its (new) IP
+    // (-1 clears any stale override left on that IP, falling back to the global).
+    shaper_set_override(ip, cap);
 }
 
 void clients_start_hostname_capture(void) {
@@ -199,6 +234,21 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo) {
         if (s_clients[i].used && s_clients[i].ip == ip_nbo)
             s_clients[i].leaf_grown_us = 0;
     xSemaphoreGive(s_lock);
+}
+
+uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps) {
+    uint32_t ip = 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            s_clients[i].bw_cap_kbps = kbps;
+            ip = s_clients[i].ip;
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+    return ip;
 }
 
 void clients_reset_budget_by_mac(const uint8_t mac[6]) {

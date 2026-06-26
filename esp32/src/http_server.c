@@ -419,31 +419,44 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         if (cap > 0) snprintf(budget, sizeof(budget), "%u / %d min", used_min, cap / 60);
         else         snprintf(budget, sizeof(budget), "%u min", used_min);
 
+        // Per-user speed cap: -1 = global default, 0 = uncapped, else kbps.
+        // `capstr` is the human label; `capval` pre-fills the form input.
+        char capstr[20], capval[12];
+        if (list[i].bw_cap_kbps < 0)       { snprintf(capstr, sizeof(capstr), "default"); capval[0] = '\0'; }
+        else if (list[i].bw_cap_kbps == 0) { snprintf(capstr, sizeof(capstr), "uncapped"); snprintf(capval, sizeof(capval), "0"); }
+        else { snprintf(capstr, sizeof(capstr), "%d kbps", (int)list[i].bw_cap_kbps);
+               snprintf(capval, sizeof(capval), "%d", (int)list[i].bw_cap_kbps); }
+
         o += snprintf(body + o, BODY_SZ - o,
             "<div style='border-top:1px solid #1f3d29;padding:10px 0'>"
             "<p class='sub' style='margin:0 0 4px'>&#x1F33F; <strong>%s</strong>"
             "%s%s <span style='opacity:.6'>&middot; %s</span></p>"
             "<p class='sub' style='margin:0 0 8px;opacity:.6;font-size:13px'>"
-            "online %s</p>"
+            "online %s &middot; speed %s</p>"
             "<div style='display:flex;gap:6px;flex-wrap:wrap'>",
             nm, hn[0] ? " &middot; " : "", hn,
             list[i].banned ? "<span style='color:#d8b24a'>over budget</span>" : status,
-            budget);
+            budget, capstr);
 
-        if (list[i].ip) {  // live controls need a known IP to target
+        // Per-user speed cap — MAC-keyed so it persists and works offline.
+        // Blank input = clear back to the global default.
+        o += snprintf(body + o, BODY_SZ - o,
+            "<form method='POST' action='/admin/userspeed' "
+            "style='display:flex;gap:6px;margin:0;flex:1;min-width:150px'>"
+            "<input type='hidden' name='mac' value='%s'>"
+            "<input type='number' name='kbps' min='0' value='%s' placeholder='default' "
+            "style='margin:0;flex:1'>"
+            "<button style='margin:0;padding:10px 12px'>Cap</button></form>",
+            machex, capval);
+
+        if (list[i].ip) {  // kick acts on live traffic → needs the IP
             unsigned long ip = (unsigned long)list[i].ip;
             o += snprintf(body + o, BODY_SZ - o,
-                "<form method='POST' action='/admin/userspeed' "
-                "style='display:flex;gap:6px;margin:0;flex:1;min-width:140px'>"
-                "<input type='hidden' name='ip' value='%lu'>"
-                "<input type='number' name='kbps' min='0' placeholder='kbps' "
-                "style='margin:0;flex:1'>"
-                "<button style='margin:0;padding:10px 12px'>Set</button></form>"
                 "<form method='POST' action='/admin/kick' style='margin:0'>"
                 "<input type='hidden' name='ip' value='%lu'>"
                 "<button style='margin:0;padding:10px 14px;background:#aa3333'>Kick</button>"
                 "</form>",
-                ip, ip);
+                ip);
         }
         // Reset-time is MAC-keyed so it works even when the visitor is offline.
         o += snprintf(body + o, BODY_SZ - o,
@@ -575,17 +588,24 @@ static esp_err_t admin_kick_handler(httpd_req_t *req) {
     return redirect_to(req, "/admin", NULL);
 }
 
-// Override one visitor's bandwidth cap (kbps; 0 = uncapped).
+// Set one visitor's persistent per-user speed cap (kbps; 0 = uncapped, blank =
+// clear back to the global default). MAC-keyed so it survives reboot.
 static esp_err_t admin_userspeed_handler(httpd_req_t *req) {
     if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
     char rbody[128] = {0};
     int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
     if (n > 0) rbody[n] = '\0';
-    char ips[16] = {0}, kb[16] = {0};
-    get_field(rbody, "ip",   ips, sizeof(ips));
-    get_field(rbody, "kbps", kb,  sizeof(kb));
-    uint32_t ip = (uint32_t)strtoul(ips, NULL, 10);
-    if (ip && kb[0]) shaper_set_override(ip, atoi(kb));
+    char machex[16] = {0}, kb[16] = {0};
+    get_field(rbody, "mac",  machex, sizeof(machex));
+    get_field(rbody, "kbps", kb,     sizeof(kb));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        int kbps = kb[0] ? atoi(kb) : -1;        // blank → use global default
+        uint32_t ip = clients_set_bw_cap_by_mac(mac, kbps);
+        if (ip) shaper_set_override(ip, kbps);   // apply now if they're online
+        clients_flush();
+        ESP_LOGI(TAG, "admin set %s speed cap to %d kbps", machex, kbps);
+    }
     return redirect_to(req, "/admin", NULL);
 }
 

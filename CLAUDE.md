@@ -42,7 +42,7 @@ Key source files:
 - `src/wifi_manager.c` — NVS credential storage, AP+STA setup, NAPT
 - `src/dns_server.c` — selective DNS spoofing (SERVFAIL fast-fail until uplink is up)
 - `src/http_server.c` — HTTP handlers: portal, setup wizard, and the `/admin` page
-- `src/client_state.c` — per-MAC visitor table; persistent fields (name, hostname, `total_connected_s`, `banned`) survive reboot in NVS namespace `users`, ephemeral fields (ip, leaf/seen timers) are RAM-only. Maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`. Dirty-flushed via `clients_flush()`
+- `src/client_state.c` — per-MAC visitor table; persistent fields (name, hostname, `total_connected_s`, `banned`, `bw_cap_kbps`) survive reboot in a versioned NVS blob (namespace `users`), ephemeral fields (ip, leaf/seen timers) are RAM-only. Re-applies each device's persisted speed cap to the shaper on IP assignment. Maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`. Dirty-flushed via `clients_flush()`
 - `src/accounting.c` — 30s task: credits online visitors' connected time, enforces the connected-time cap (bans + revokes over-budget visitors), flushes the table
 - `src/config.c` — NVS-backed leaf TTL, per-client kbps, connected-time cap (`tcap`), admin password (salted SHA-256 via PSA crypto)
 - `src/reset_button.c` — GPIO0 5s hold → factory reset (wipes `wifi`, `cfg`, `users`)

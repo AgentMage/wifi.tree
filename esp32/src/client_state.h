@@ -14,6 +14,7 @@ typedef struct {
     char     hostname[33];      // DHCP-reported hostname, "" if unknown
     uint32_t total_connected_s; // lifetime seconds spent online (time budget)
     bool     banned;            // true => cut off (over budget or kicked-for-good)
+    int32_t  bw_cap_kbps;       // per-user speed cap; -1 = global default, 0 = uncapped
     // ── Ephemeral (RAM only, zeroed on boot) ──
     uint32_t ip;             // last-seen IP (network byte order), 0 if unknown
     int64_t  first_seen_us;  // esp_timer_get_time() at first sighting
@@ -55,6 +56,13 @@ int clients_snapshot(client_t *out, int max);
 // Clear the leaf of whichever client currently holds this IP (network byte
 // order), so they revert to the new-visitor flow. No-op if not found.
 void clients_clear_leaf_by_ip(uint32_t ip_nbo);
+
+// Set a visitor's persistent per-user speed cap (kbit/s; -1 = use global
+// default, 0 = uncapped), keyed by MAC. Returns the visitor's current IP
+// (network byte order, 0 if unknown) so the caller can push the new cap to the
+// shaper for immediate effect. Marks the table dirty. No-op (returns 0) if the
+// MAC isn't in the table.
+uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps);
 
 // Reset a visitor's time budget: zero their accumulated connected time and
 // lift any ban, so they can grow a leaf again. Keyed by MAC (persistent), so
