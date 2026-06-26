@@ -517,7 +517,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
 
     // Heap-allocate the large buffers — too big for the httpd task stack.
-    const int BODY_SZ = 16384;
+    const int BODY_SZ = 20480;
     client_t *list = malloc(sizeof(client_t) * 16);
     char *body = malloc(BODY_SZ);
     if (!list || !body) {
@@ -549,7 +549,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<h2>Visitors</h2>",
         clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
-    for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
+    for (int i = 0; i < n && o < BODY_SZ - 1600; i++) {
         char nm[128], rawnm[128], hn[128], machex[13];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
         html_escape(rawnm, sizeof(rawnm), list[i].name);   // for the rename input
@@ -565,6 +565,12 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         else if (!client_leaf_active(&list[i], ttl)){ pill = "warn"; snprintf(status, sizeof(status), "expired"); }
         else if (ttl <= 0)        { snprintf(status, sizeof(status), "fresh"); }
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
+
+        char ipstr[20];
+        if (list[i].ip) {
+            const uint8_t *b = (const uint8_t *)&list[i].ip;
+            snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+        } else snprintf(ipstr, sizeof(ipstr), "offline");
 
         char budget[40];
         unsigned used_min = list[i].total_connected_s / 60;
@@ -587,54 +593,53 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         else { snprintf(capstr, sizeof(capstr), "%d kbps", (int)list[i].bw_cap_kbps);
                snprintf(capval, sizeof(capval), "%d", (int)list[i].bw_cap_kbps); }
 
+        // Card: name + status, meta (host/ip), read-only usage chips.
         o += snprintf(body + o, BODY_SZ - o,
             "<div class='card2'>"
-            "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px'>"
-            "<strong>&#x1F33F; %s</strong><span class='pill %s'>%s</span></div>"
-            "<div class='muted' style='margin:5px 0 10px'>%s%sonline %s &middot; %s &middot; speed %s</div>"
-            "<div style='display:flex;gap:6px;flex-wrap:wrap'>",
+            "<div class='vhead'><span class='vname'>&#x1F33F; %s</span>"
+            "<span class='pill %s'>%s</span></div>"
+            "<div class='vmeta'>%s%s%s</div>"
+            "<div class='chips'>"
+            "<span class='chip'>&#x23F1;&#xFE0F; %s</span>"
+            "<span class='chip'>&#x1F4CA; %s</span>"
+            "<span class='chip'>&#x1F6A6; %s</span>"
+            "</div>"
+            "<details class='manage'><summary>Manage</summary>",
             nm, pill, status,
-            hn[0] ? hn : "", hn[0] ? " &middot; " : "", budget, data, capstr);
+            hn[0] ? hn : "", hn[0] ? " &middot; " : "", ipstr,
+            budget, data, capstr);
 
-        // Rename — MAC-keyed.
+        // Rename + speed rows (MAC-keyed, persist, work offline).
         o += snprintf(body + o, BODY_SZ - o,
-            "<form method='POST' action='/admin/rename' "
-            "style='display:flex;gap:6px;margin:0;flex:1;min-width:150px'>"
+            "<div class='mrow'><form method='POST' action='/admin/rename'>"
+            "<input type='hidden' name='mac' value='%s'><label>Name</label>"
+            "<input type='text' name='name' value='%s' placeholder='(no name)' maxlength='40'>"
+            "<button class='sec'>Rename</button></form></div>"
+            "<div class='mrow'><form method='POST' action='/admin/userspeed'>"
+            "<input type='hidden' name='mac' value='%s'><label>Speed</label>"
+            "<input type='number' name='kbps' min='0' value='%s' placeholder='default'>"
+            "<span class='muted'>kbps</span><button class='sec'>Set</button></form></div>"
+            "<div class='mactions'>"
+            "<form method='POST' action='/admin/resettime'>"
             "<input type='hidden' name='mac' value='%s'>"
-            "<input type='text' name='name' value='%s' placeholder='(no name)' "
-            "maxlength='40' style='margin:0;flex:1'>"
-            "<button class='sec' style='margin:0'>Save</button></form>",
-            machex, rawnm);
+            "<button class='sec'>Reset usage</button></form>",
+            machex, rawnm, machex, capval, machex);
 
-        // Per-user speed cap — MAC-keyed (persists, works offline). Blank = default.
-        o += snprintf(body + o, BODY_SZ - o,
-            "<form method='POST' action='/admin/userspeed' "
-            "style='display:flex;gap:6px;margin:0;flex:1;min-width:150px'>"
-            "<input type='hidden' name='mac' value='%s'>"
-            "<input type='number' name='kbps' min='0' value='%s' placeholder='default' "
-            "style='margin:0;flex:1'>"
-            "<button style='margin:0'>Cap</button></form>",
-            machex, capval);
-
-        if (list[i].ip) {  // kick acts on live traffic → needs the IP
-            unsigned long ip = (unsigned long)list[i].ip;
+        if (list[i].ip)   // kick acts on live traffic → needs the IP
             o += snprintf(body + o, BODY_SZ - o,
-                "<form method='POST' action='/admin/kick' style='margin:0'>"
+                "<form method='POST' action='/admin/kick' "
+                "onsubmit='return confirm(\"Kick this visitor now?\")'>"
                 "<input type='hidden' name='ip' value='%lu'>"
-                "<button class='danger' style='margin:0'>Kick</button></form>",
-                ip);
-        }
-        // Reset clears both budgets and lifts any ban. MAC-keyed (works offline).
+                "<button class='warn'>Kick</button></form>",
+                (unsigned long)list[i].ip);
+
         o += snprintf(body + o, BODY_SZ - o,
-            "<form method='POST' action='/admin/resettime' style='margin:0'>"
-            "<input type='hidden' name='mac' value='%s'>"
-            "<button class='sec' style='margin:0'>Reset</button></form>"
-            "<form method='POST' action='/admin/forget' style='margin:0' "
+            "<form method='POST' action='/admin/forget' "
             "onsubmit='return confirm(\"Forget this visitor entirely?\")'>"
             "<input type='hidden' name='mac' value='%s'>"
-            "<button class='danger' style='margin:0'>Forget</button>"
-            "</form></div></div>",
-            machex, machex);
+            "<button class='danger'>Forget</button></form>"
+            "</div></details></div>",
+            machex);
     }
     if (n == 0)
         o += snprintf(body + o, BODY_SZ - o,

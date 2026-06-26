@@ -149,7 +149,23 @@ static const char PORTAL_CSS_STR[] = PORTAL_CSS;
   ".preview .pe{font-size:2.6em;line-height:1}.preview .pt{font-size:1.3em;font-weight:700;margin:2px 0}" \
   ".preview .pg{opacity:.7;font-size:.9em}" \
   ".preview .pb{background:#2a2410;border:1px solid #b8860b;color:#ffe9a8;border-radius:10px;" \
-    "padding:8px 10px;margin-top:10px;white-space:pre-wrap}"
+    "padding:8px 10px;margin-top:10px;white-space:pre-wrap}" \
+  ".vhead{display:flex;justify-content:space-between;align-items:center;gap:8px}" \
+  ".vname{font-weight:700;font-size:1.05em}" \
+  ".vmeta{opacity:.55;font-size:.82em;margin:3px 0 8px}" \
+  ".chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}" \
+  ".chip{background:#0b1a0f;border:1px solid #1f3d29;border-radius:99px;padding:3px 10px;" \
+    "font-size:.78em;opacity:.9;white-space:nowrap}" \
+  "details.manage{border-top:1px solid #1f3d29;margin-top:8px;padding-top:4px}" \
+  "details.manage>summary{cursor:pointer;color:#9fe89f;font-size:.88em;padding:6px 0;user-select:none}" \
+  ".mrow{display:flex;align-items:center;gap:8px;margin:8px 0}" \
+  ".mrow form{display:flex;align-items:center;gap:8px;flex:1;margin:0}" \
+  ".mrow label{font-size:.8em;opacity:.7;min-width:46px}" \
+  ".mrow input{flex:1;min-width:60px;margin:0}" \
+  ".mactions{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #1f3d29;" \
+    "margin-top:6px;padding-top:10px}" \
+  ".mactions form{margin:0}" \
+  "button.warn{background:#b8860b}"
 
 // Nav shown on authed admin pages.
 #define ADMIN_NAV \
