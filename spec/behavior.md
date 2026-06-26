@@ -78,10 +78,12 @@ returning visitor with a fresh leaf sees a status card with their name,
 hostname, and remaining freshness), plus an **Over-budget** state: once a
 visitor reaches either configured cap they're cut off and shown a "your leaf has
 fallen" card (with their time + data used) until an operator resets them.
-Operators get a password-gated admin page at `wifi.tree/admin` to view visitors
-and their usage, set the leaf TTL / default speed cap / time budget / data
-budget, set a per-visitor speed cap, kick a visitor, and reset a visitor's
-budgets.
+Operators get a password-gated, multi-page admin at `wifi.tree/admin`: a live
+dashboard (connected count, channel, live ↓/↑ rates, per-device signal) that
+auto-refreshes, a settings page, and a **customize page** to edit the portal
+appearance (emoji, title, tagline, banner, welcome copy, footer, accent —
+persisted in NVS, applied live). Per-visitor they can set a speed cap, kick,
+and reset a visitor's budgets.
 
 Internet access **is gated by the leaf**: a custom lwIP IPv4 forwarding hook
 (`LWIP_HOOK_IP4_CANFORWARD`) drops uplink-bound packets from any AP client that

@@ -42,6 +42,7 @@ static void reset_task(void *arg) {
                 wipe_namespace("wifi");   // uplink ssid/pass
                 wipe_namespace("cfg");    // admin password + leaf TTL
                 wipe_namespace("users");  // persisted visitor records + time budget
+                wipe_namespace("portal"); // portal appearance customizations
                 led_blink_n(5, 150);     // confirm reset to the user before reboot
                 esp_restart();
             }

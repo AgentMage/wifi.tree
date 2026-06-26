@@ -2,6 +2,7 @@
 #include "wifi_manager.h"
 #include "client_state.h"
 #include "config.h"
+#include "portal_cfg.h"
 #include "authz.h"
 #include "shaper.h"
 #include "html.h"
@@ -103,8 +104,8 @@ static void get_field(const char *body, const char *key, char *out, size_t outle
     p += strlen(needle);
     const char *end = strchr(p, '&');
     size_t len = end ? (size_t)(end - p) : strlen(p);
-    if (len >= sizeof((char[256]){})) len = 254;
-    char raw[256];
+    char raw[768];
+    if (len >= sizeof(raw)) len = sizeof(raw) - 1;
     memcpy(raw, p, len);
     raw[len] = '\0';
     urldecode(out, outlen, raw);
@@ -241,6 +242,80 @@ static uint32_t client_ip(httpd_req_t *req) {
     return ip;
 }
 
+// Copy only safe hex-colour characters; fall back to the default accent.
+static void accent_safe(char *out, size_t sz, const char *in) {
+    size_t j = 0;
+    for (; *in && j + 1 < sz; in++) {
+        char c = *in;
+        if (c == '#' || (c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+            out[j++] = c;
+    }
+    out[j] = '\0';
+    if (!out[0]) strlcpy(out, "#2e7d32", sz);
+}
+
+// Like html_escape, but turns newlines into <br> (for multi-line copy fields).
+static void escape_br(char *dst, size_t dstsz, const char *src) {
+    size_t i = 0;
+    for (; *src && i + 7 < dstsz; src++) {
+        switch (*src) {
+            case '<':  memcpy(dst+i, "&lt;",  4); i += 4; break;
+            case '>':  memcpy(dst+i, "&gt;",  4); i += 4; break;
+            case '&':  memcpy(dst+i, "&amp;", 5); i += 5; break;
+            case '\n': memcpy(dst+i, "<br>",  4); i += 4; break;
+            default:   dst[i++] = *src; break;
+        }
+    }
+    dst[i] = '\0';
+}
+
+// Emit the customizable portal page head (theme + logo/title/tagline + banner).
+static esp_err_t send_portal_head(httpd_req_t *req) {
+    char title[120], emoji[64], tag[400], accent[10];
+    html_escape(title, sizeof(title), portalcfg_get("title"));
+    html_escape(emoji, sizeof(emoji), portalcfg_get("emoji"));
+    html_escape(tag,   sizeof(tag),   portalcfg_get("tagline"));
+    accent_safe(accent, sizeof(accent), portalcfg_get("accent"));
+
+    char pre[256];
+    int n = snprintf(pre, sizeof(pre),
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>%s</title><style>", title);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, pre, n);
+    httpd_resp_send_chunk(req, PORTAL_CSS_STR, sizeof(PORTAL_CSS_STR) - 1);
+
+    char post[700];
+    n = snprintf(post, sizeof(post),
+        "button,a.btnlink{background:%s}</style></head><body><div class='wrap'>"
+        "<div class='logo'>%s</div><h1>%s</h1><p class='tag'>%s</p>",
+        accent, emoji, title, tag);
+    httpd_resp_send_chunk(req, post, n);
+
+    const char *banner = portalcfg_get("banner");
+    if (banner[0]) {
+        char be[640], bbuf[760];
+        escape_br(be, sizeof(be), banner);
+        n = snprintf(bbuf, sizeof(bbuf),
+            "<div class='card' style='border-color:#b8860b;background:#2a2410;"
+            "color:#ffe9a8;white-space:pre-wrap'>%s</div>", be);
+        httpd_resp_send_chunk(req, bbuf, n);
+    }
+    return ESP_OK;
+}
+
+// Emit the customizable portal page footer + closing tags. Ends the response.
+static esp_err_t send_portal_foot(httpd_req_t *req) {
+    char fe[640], buf[760];
+    escape_br(fe, sizeof(fe), portalcfg_get("footer"));
+    int n = snprintf(buf, sizeof(buf), "<p class='foot'>%s</p></div></body></html>", fe);
+    httpd_resp_send_chunk(req, buf, n);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 // Renders the "Active leaf" status card for a returning visitor.
 static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) {
     char safe_name[256], safe_host[200];
@@ -265,12 +340,9 @@ static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) 
         safe_host[0] ? safe_host : "",
         safe_host[0] ? "</p>" : "");
 
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
+    send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);
-    httpd_resp_send_chunk(req, PORTAL_FOOT, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
+    return send_portal_foot(req);
 }
 
 // Renders the "you've used your share" card for a visitor over their time budget.
@@ -292,12 +364,9 @@ static esp_err_t send_over_budget_card(httpd_req_t *req, client_t *c) {
         "</div>",
         safe_name, used_min, (unsigned long)mb, (unsigned long)tenths);
 
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
+    send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);
-    httpd_resp_send_chunk(req, PORTAL_FOOT, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
+    return send_portal_foot(req);
 }
 
 static esp_err_t portal_get_handler(httpd_req_t *req) {
@@ -308,10 +377,28 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
     if (client_leaf_active(c, ttl))
         return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
 
-    // New visitor, or leaf expired — show the grow-a-leaf welcome form.
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, PORTAL_WELCOME_HTML, HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
+    // New visitor, or leaf expired — show the customizable grow-a-leaf welcome.
+    char whead[200], wtext[700], accent[10];
+    html_escape(whead, sizeof(whead), portalcfg_get("whead"));
+    escape_br(wtext, sizeof(wtext), portalcfg_get("wtext"));
+    accent_safe(accent, sizeof(accent), portalcfg_get("accent"));
+
+    char body[1100];
+    int len = snprintf(body, sizeof(body),
+        "<div class='card'>"
+        "<p class='headline' style='color:%s'>%s</p>"
+        "<p class='sub' style='white-space:pre-wrap'>%s</p>"
+        "</div>"
+        "<div class='card'>"
+        "<form method='POST'>"
+        "<input name='name' placeholder='enter your name' maxlength='40' required>"
+        "<button type='submit'>Grow a Leaf &#x1F33F;</button>"
+        "</form></div>",
+        accent, whead, wtext);
+
+    send_portal_head(req);
+    httpd_resp_send_chunk(req, body, len);
+    return send_portal_foot(req);
 }
 
 // Handles the "Grow a Leaf" form POST.
@@ -345,12 +432,21 @@ static esp_err_t portal_post_handler(httpd_req_t *req) {
 
     ESP_LOGI(TAG, "leaf grown: %s", name);
 
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send_chunk(req, PORTAL_SUCCESS_A,  HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, safe_name,          HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, PORTAL_SUCCESS_B,  HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
+    char page[700];
+    int len = snprintf(page, sizeof(page),
+        "<div class='card ok leafy'><div class='success'>"
+        "<div class='leaf-burst'><span class='sway'>&#x1F33F;</span></div>"
+        "<p class='leaf-sub'>a fresh leaf, just for you</p>"
+        "<div class='big'>You grew a leaf, %s!</div>"
+        "<p class='note'>You&#39;re online &mdash; close this page and start browsing.</p>"
+        "</div>"
+        "<a class='btnlink' href='http://wifi.tree'>Go to wifi.tree &rarr;</a>"
+        "</div>",
+        safe_name);
+
+    send_portal_head(req);
+    httpd_resp_send_chunk(req, page, len);
+    return send_portal_foot(req);
 }
 
 static esp_err_t portal_catchall_handler(httpd_req_t *req) {
@@ -533,6 +629,103 @@ static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
         config_leaf_ttl_seconds() / 60, config_client_kbps(),
         config_connected_cap_seconds() / 60, config_data_cap_mb());
     return send_admin(req, body, len);
+}
+
+// GET /admin/customize — portal appearance editor with a live preview.
+static esp_err_t admin_customize_get_handler(httpd_req_t *req) {
+    if (!config_has_admin_password() || !admin_authed(req))
+        return redirect_to(req, "/admin", NULL);
+
+    char emoji[64], title[120], tag[400], banner[640];
+    char whead[200], wtext[760], footer[640], accent[10];
+    html_escape(emoji,  sizeof(emoji),  portalcfg_get("emoji"));
+    html_escape(title,  sizeof(title),  portalcfg_get("title"));
+    html_escape(tag,    sizeof(tag),    portalcfg_get("tagline"));
+    html_escape(banner, sizeof(banner), portalcfg_get("banner"));
+    html_escape(whead,  sizeof(whead),  portalcfg_get("whead"));
+    html_escape(wtext,  sizeof(wtext),  portalcfg_get("wtext"));
+    html_escape(footer, sizeof(footer), portalcfg_get("footer"));
+    accent_safe(accent, sizeof(accent), portalcfg_get("accent"));
+
+    const int SZ = 8192;
+    char *body = malloc(SZ);
+    if (!body) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_FAIL; }
+
+    int o = snprintf(body, SZ,
+        "<h2>Customize the portal</h2>"
+        "<div class='preview'>"
+        "<div class='pe' id='p-emoji'>%s</div>"
+        "<div class='pt' id='p-title' style='color:%s'>%s</div>"
+        "<div class='pg' id='p-tag'>%s</div>"
+        "<div class='pb' id='p-banner' style='%s'>%s</div>"
+        "</div>"
+        "<div class='card2'><form class='cust' method='POST' action='/admin/customize'>"
+        "<label>Header emoji</label>"
+        "<input type='text' name='emoji' id='f-emoji' value='%s' maxlength='16' oninput='upd()'>"
+        "<div class='emoji-pick'>" EMOJI_PICK "</div>"
+        "<label>Title</label>"
+        "<input type='text' name='title' id='f-title' value='%s' maxlength='40' oninput='upd()'>"
+        "<label>Tagline</label>"
+        "<input type='text' name='tagline' id='f-tag' value='%s' maxlength='120' oninput='upd()'>"
+        "<label>Announcement banner (blank = hidden)</label>"
+        "<textarea name='banner' id='f-banner' maxlength='200' oninput='upd()'>%s</textarea>"
+        "<label>Welcome heading</label>"
+        "<input type='text' name='whead' value='%s' maxlength='80'>"
+        "<label>Welcome text</label>"
+        "<textarea name='wtext' maxlength='400'>%s</textarea>"
+        "<label>Footer</label>"
+        "<textarea name='footer' maxlength='200'>%s</textarea>"
+        "<label>Accent colour (buttons &amp; title)</label><br>"
+        "<input type='color' name='accent' id='f-accent' value='%s' oninput='upd()'>"
+        "<div style='margin-top:18px'><button type='submit'>Save &mdash; go live</button></div>"
+        "</form></div>"
+        "<form method='POST' action='/admin/customize' style='margin-top:6px' "
+        "onsubmit='return confirm(\"Reset portal text to defaults?\")'>"
+        "<input type='hidden' name='action' value='reset'>"
+        "<button class='sec'>Reset to defaults</button></form>"
+        "<p class='muted'>Changes go live on the portal immediately.</p>"
+        CUSTOMIZE_JS,
+        emoji, accent, title, tag, banner[0] ? "" : "display:none", banner,
+        emoji, title, tag, banner, whead, wtext, footer, accent);
+
+    if (o > SZ - 1) o = SZ - 1;
+    esp_err_t r = send_admin(req, body, o);
+    free(body);
+    return r;
+}
+
+// POST /admin/customize — save appearance fields, or reset to defaults.
+static esp_err_t admin_customize_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+
+    const int SZ = 4096;
+    char *rbody = malloc(SZ);
+    if (!rbody) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_FAIL; }
+    int total = 0, remaining = req->content_len;
+    if (remaining > SZ - 1) remaining = SZ - 1;
+    while (remaining > 0) {
+        int r = httpd_req_recv(req, rbody + total, remaining);
+        if (r <= 0) break;
+        total += r; remaining -= r;
+    }
+    rbody[total] = '\0';
+
+    char act[16] = {0};
+    get_field(rbody, "action", act, sizeof(act));
+    if (strcmp(act, "reset") == 0) {
+        portalcfg_reset();
+        ESP_LOGI(TAG, "portal customization reset to defaults");
+    } else {
+        char val[420];
+        for (int i = 0; i < portalcfg_count(); i++) {
+            const portalcfg_field_t *f = portalcfg_field(i);
+            get_field(rbody, f->key, val, sizeof(val));
+            portalcfg_set(f->key, val);
+        }
+        ESP_LOGI(TAG, "portal customization saved");
+    }
+    free(rbody);
+    return redirect_to(req, "/admin/customize", NULL);
 }
 
 // GET /admin/stats.json — live data for the dashboard's 2s poll.
@@ -747,7 +940,7 @@ void http_server_start_setup(const char *networks_html) {
 void http_server_start_portal(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
     cfg.stack_size = 8192;   // headroom for admin handlers (default 4096 too tight)
 
     httpd_handle_t server;
@@ -760,6 +953,8 @@ void http_server_start_portal(void) {
     httpd_uri_t admin[] = {
         { .uri = "/admin",          .method = HTTP_GET,  .handler = admin_get_handler },
         { .uri = "/admin/settings", .method = HTTP_GET,  .handler = admin_settings_get_handler },
+        { .uri = "/admin/customize",.method = HTTP_GET,  .handler = admin_customize_get_handler },
+        { .uri = "/admin/customize",.method = HTTP_POST, .handler = admin_customize_handler },
         { .uri = "/admin/stats.json",.method = HTTP_GET, .handler = admin_stats_json },
         { .uri = "/admin/setpw",    .method = HTTP_POST, .handler = admin_setpw_handler },
         { .uri = "/admin/login",    .method = HTTP_POST, .handler = admin_login_handler },

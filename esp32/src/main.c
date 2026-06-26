@@ -3,6 +3,7 @@
 #include "http_server.h"
 #include "client_state.h"
 #include "config.h"
+#include "portal_cfg.h"
 #include "authz.h"
 #include "shaper.h"
 #include "accounting.h"
@@ -25,6 +26,7 @@ static void portal_led_task(void *arg) {
 void app_main(void) {
     nvs_init();
     config_init();
+    portalcfg_init();
     led_init();
     clients_init();
     authz_init();

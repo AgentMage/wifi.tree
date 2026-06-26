@@ -92,23 +92,8 @@ static const char SAVING_HTML[] =
     "100%{transform:scale(1) rotate(0);opacity:1}}" \
   "@keyframes leafsway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}"
 
-// ── Shared chrome for dynamically-built pages (status card, admin) ────────────
-// Use: send PORTAL_HEAD, then a snprintf'd body, then PORTAL_FOOT.
-static const char PORTAL_HEAD[] =
-    "<!DOCTYPE html><html><head>"
-    "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>wifi.tree</title>"
-    "<style>" PORTAL_CSS "</style>"
-    "</head><body>"
-    "<div class='wrap'>"
-    "<div class='logo'>&#x1F333;</div>"
-    "<h1>wifi.tree</h1>"
-    "<p class='tag'>community wifi &middot; please be mindful, it&#39;s shared</p>";
-
-static const char PORTAL_FOOT[] =
-    "<p class='foot'>Shared, fair, bandwidth-limited.<br>Be kind, keep it light.</p>"
-    "</div></body></html>";
+// Sendable form of PORTAL_CSS (so dynamic portal pages can chunk it out).
+static const char PORTAL_CSS_STR[] = PORTAL_CSS;
 
 // ── Admin chrome (mirrors the Pi's wifitree-webadmin.py theme) ────────────────
 #define ADMIN_CSS \
@@ -150,13 +135,57 @@ static const char PORTAL_FOOT[] =
     "border-radius:16px;padding:26px}" \
   ".login input{width:100%;padding:12px;font-size:1.05em;margin-bottom:12px}" \
   ".login button{width:100%;padding:13px;font-size:1.05em}" \
-  ".login h1{color:#9fe89f;text-align:center;margin:.2em 0}"
+  ".login h1{color:#9fe89f;text-align:center;margin:.2em 0}" \
+  ".cust label{display:block;margin:14px 0 4px;font-size:.78em;opacity:.75;text-transform:uppercase;letter-spacing:.03em}" \
+  ".cust input[type=text],.cust textarea{width:100%;padding:10px;border-radius:9px;" \
+    "border:1px solid #2e7d32;background:#0b1a0f;color:#eaffea;font-size:1em;font-family:inherit}" \
+  ".cust textarea{min-height:54px;resize:vertical}" \
+  ".cust input[type=color]{width:50px;height:36px;padding:2px;border:1px solid #2e7d32;" \
+    "background:#0b1a0f;border-radius:8px;vertical-align:middle}" \
+  ".emoji-pick{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}" \
+  ".emoji-pick button{font-size:1.3em;width:auto;padding:4px 7px;background:#18301d;margin:0}" \
+  ".preview{background:#0b1a0f;border:1px solid #1f3d29;border-radius:14px;padding:18px;" \
+    "text-align:center;margin-bottom:16px}" \
+  ".preview .pe{font-size:2.6em;line-height:1}.preview .pt{font-size:1.3em;font-weight:700;margin:2px 0}" \
+  ".preview .pg{opacity:.7;font-size:.9em}" \
+  ".preview .pb{background:#2a2410;border:1px solid #b8860b;color:#ffe9a8;border-radius:10px;" \
+    "padding:8px 10px;margin-top:10px;white-space:pre-wrap}"
 
-// Nav shown on authed admin pages. Extended in later phases (customize, password).
+// Nav shown on authed admin pages.
 #define ADMIN_NAV \
   "<nav><a href='/admin'>dashboard</a> &middot; " \
   "<a href='/admin/settings'>settings</a> &middot; " \
+  "<a href='/admin/customize'>customize</a> &middot; " \
   "<a href='/admin/logout'>log out</a></nav>"
+
+// Emoji quick-pick buttons for the customize page (UTF-8 literals).
+#define EMOJI_PICK \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\xB3</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\xB2</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\xBF</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8D\x84</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x94\xA5</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\x88</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xE2\x9B\xBA</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8E\xB8</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xE2\x9C\xA8</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\xBB</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x8C\x99</button>" \
+  "<button type='button' onclick='setE(this.textContent)'>\xF0\x9F\x92\x9A</button>"
+
+// Live-preview script for the customize page (no '%').
+#define CUSTOMIZE_JS \
+  "<script>" \
+  "function gv(id){return document.getElementById(id).value}" \
+  "function setE(e){document.getElementById('f-emoji').value=e;upd()}" \
+  "function upd(){" \
+  "document.getElementById('p-emoji').textContent=gv('f-emoji');" \
+  "document.getElementById('p-title').textContent=gv('f-title');" \
+  "document.getElementById('p-title').style.color=gv('f-accent');" \
+  "document.getElementById('p-tag').textContent=gv('f-tag');" \
+  "var b=gv('f-banner'),pb=document.getElementById('p-banner');" \
+  "pb.textContent=b;pb.style.display=b.trim()?'block':'none'}" \
+  "</script>"
 
 // Authed page chrome: header + nav, then body, then ADMIN_FOOT.
 static const char ADMIN_HEAD[] =
@@ -202,59 +231,5 @@ static const char ADMIN_FOOT[] = "</div></body></html>";
 "tick();setInterval(tick,2000);" \
 "</script>"
 
-// ── Portal welcome page (GET /) ───────────────────────────────────────────────
-static const char PORTAL_WELCOME_HTML[] =
-    "<!DOCTYPE html><html><head>"
-    "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>wifi.tree</title>"
-    "<style>" PORTAL_CSS "</style>"
-    "</head><body>"
-    "<div class='wrap'>"
-    "<div class='logo'>&#x1F333;</div>"
-    "<h1>wifi.tree</h1>"
-    "<p class='tag'>community wifi &middot; please be mindful, it&#39;s shared</p>"
-    "<div class='card'>"
-    "<p class='headline' style='color:#2e7d32'>Welcome to the gathering &#x1F33F;</p>"
-    "<p class='sub'>This is shared, free, community wifi. Enter a name and "
-    "grow a leaf to get online for 3&nbsp;hours.</p>"
-    "</div>"
-    "<div class='card'>"
-    "<form method='POST'>"
-    "<input name='name' placeholder='enter your name' maxlength='40' required>"
-    "<button type='submit'>Grow a Leaf &#x1F33F;</button>"
-    "</form>"
-    "</div>"
-    "<p class='foot'>Shared, fair, bandwidth-limited.<br>Be kind, keep it light.</p>"
-    "</div>"
-    "</body></html>";
-
-// ── Portal success page, split around the visitor's name (POST /) ─────────────
-// Send: PORTAL_SUCCESS_A + html-escaped name + PORTAL_SUCCESS_B
-static const char PORTAL_SUCCESS_A[] =
-    "<!DOCTYPE html><html><head>"
-    "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>wifi.tree</title>"
-    "<style>" PORTAL_CSS "</style>"
-    "</head><body>"
-    "<div class='wrap'>"
-    "<div class='logo'>&#x1F333;</div>"
-    "<h1>wifi.tree</h1>"
-    "<p class='tag'>community wifi &middot; please be mindful, it&#39;s shared</p>"
-    "<div class='card ok leafy'>"
-    "<div class='success'>"
-    "<div class='leaf-burst'><span class='sway'>&#x1F33F;</span></div>"
-    "<p class='leaf-sub'>a fresh leaf, just for you</p>"
-    "<div class='big'>You grew a leaf, ";
-
-static const char PORTAL_SUCCESS_B[] =
-    "!</div>"
-    "<p class='note'>You&#39;re online &mdash; close this page and start browsing.<br>"
-    "Your leaf stays fresh for 3&nbsp;hours.</p>"
-    "</div>"
-    "<a class='btnlink' href='http://wifi.tree'>Go to wifi.tree &rarr;</a>"
-    "</div>"
-    "<p class='foot'>Shared, fair, bandwidth-limited.<br>Be kind, keep it light.</p>"
-    "</div>"
-    "</body></html>";
+// (Portal welcome/success/status pages are now built dynamically in
+// http_server.c from the operator's portal_cfg appearance settings.)

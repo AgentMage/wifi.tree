@@ -46,6 +46,7 @@ Key source files:
 - `src/shaper.c` — per-client token-bucket bandwidth cap in the lwIP forwarding hook; also meters forwarded bytes per IP (`shaper_take_bytes` drains them for the data budget)
 - `src/accounting.c` — 30s task: folds each visitor's forwarded bytes + online time into their persisted totals, enforces the connected-time and data caps (bans + revokes over-budget visitors), flushes the table
 - `src/config.c` — NVS-backed leaf TTL, per-client kbps, connected-time cap (`tcap`), data cap MB (`dcap`), admin password (salted SHA-256 via PSA crypto)
+- `src/portal_cfg.c` — NVS-backed portal appearance (emoji, title, tagline, banner, welcome heading/text, footer, accent; namespace `portal`), edited at `/admin/customize`; portal pages are rendered dynamically from it
 - `src/reset_button.c` — GPIO0 5s hold → factory reset (wipes `wifi`, `cfg`, `users`)
 - `src/led.c` — GPIO2 status LED (fast=setup, slow=connecting, solid=online)
 - `src/html.h` — HTML templates as C string literals; dynamic pages (status card, admin) reuse `PORTAL_HEAD`/`PORTAL_FOOT` chrome
