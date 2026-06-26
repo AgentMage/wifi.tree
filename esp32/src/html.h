@@ -159,9 +159,10 @@ static const char PORTAL_CSS_STR[] = PORTAL_CSS;
   "details.manage{border-top:1px solid #1f3d29;margin-top:8px;padding-top:4px}" \
   "details.manage>summary{cursor:pointer;color:#9fe89f;font-size:.88em;padding:6px 0;user-select:none}" \
   ".mrow{display:flex;align-items:center;gap:8px;margin:8px 0}" \
-  ".mrow form{display:flex;align-items:center;gap:8px;flex:1;margin:0}" \
+  ".mrow form{display:flex;align-items:center;gap:8px;margin:0;flex-wrap:wrap}" \
   ".mrow label{font-size:.8em;opacity:.7;min-width:46px}" \
-  ".mrow input{flex:1;min-width:60px;margin:0}" \
+  ".mrow input[type=text]{width:150px;margin:0}" \
+  ".mrow input[type=number]{width:80px;margin:0}" \
   ".mactions{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #1f3d29;" \
     "margin-top:6px;padding-top:10px}" \
   ".mactions form{margin:0}" \
