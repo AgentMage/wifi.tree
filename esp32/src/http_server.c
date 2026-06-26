@@ -638,20 +638,35 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         if (u->tcap_override < 0) tval[0] = '\0'; else snprintf(tval, sizeof(tval), "%d", (int)u->tcap_override / 60);
         if (u->dcap_override < 0) dval[0] = '\0'; else snprintf(dval, sizeof(dval), "%d", (int)u->dcap_override);
 
-        // Card head: name + status, two meta lines, usage bars + speed chip.
+        // Card head: name + status, two meta lines (host/ip, mac/last-seen).
         o += snprintf(body + o, BODY_SZ - o,
             "<div class='card2'>"
             "<div class='vhead'><span class='vname'>&#x1F33F; %s</span>"
             "<span class='pill %s'>%s</span></div>"
             "<div class='vmeta'>%s%s%s</div>"
-            "<div class='vmeta' style='margin-top:-4px'>%s &middot; seen %s</div>"
+            "<div class='vmeta' style='margin-top:-4px'>%s &middot; seen %s</div>",
+            nm, pill, status,
+            hn[0] ? hn : "", hn[0] ? " &middot; " : "", ipstr, macfmt, ago);
+
+        // Not yet registered: no leaf, no usage, no name — only a Forget action.
+        if (g == 2) {
+            o += snprintf(body + o, BODY_SZ - o,
+                "<div class='mactions'>"
+                "<form method='POST' action='/admin/forget' "
+                "onsubmit='return confirm(\"Forget this visitor entirely?\")'>"
+                "<input type='hidden' name='mac' value='%s'>"
+                "<button class='danger'>Forget</button></form>"
+                "</div></div>",
+                machex);
+            continue;
+        }
+
+        // Active / registered: usage bars + speed chip, then the Manage section.
+        o += snprintf(body + o, BODY_SZ - o,
             "<div class='bcell'>&#x23F1;&#xFE0F; %s<span class='bnum'>%s</span></div>"
             "<div class='bcell'>&#x1F4CA; %s<span class='bnum'>%s</span></div>"
             "<div class='bcell'>&#x1F6A6; <span class='bnum'>%s</span>%s</div>"
             "<details class='manage'><summary>Manage</summary>",
-            nm, pill, status,
-            hn[0] ? hn : "", hn[0] ? " &middot; " : "", ipstr,
-            macfmt, ago,
             tbar, ttxt, dbar, dtxt, capstr,
             exempt ? " <span class='pill ok'>exempt</span>" : "");
 
@@ -677,7 +692,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             "Blank = use the global default &middot; 0 = unlimited.</p>",
             machex, rawnm, machex, capval, machex, tval, machex, dval);
 
-        // Manage actions: exempt toggle, reset, kick, forget.
+        // Manage actions: exempt toggle, reset, then kick (active only), forget.
         o += snprintf(body + o, BODY_SZ - o,
             "<div class='mactions'>"
             "<form method='POST' action='/admin/exempt'>"
@@ -690,7 +705,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             machex, exempt ? "0" : "1",
             exempt ? "Un-exempt" : "Exempt (unlimited)", machex);
 
-        if (u->ip)   // kick acts on live traffic → needs the IP
+        if (g == 0 && u->ip)   // kick only matters for an active (online) visitor
             o += snprintf(body + o, BODY_SZ - o,
                 "<form method='POST' action='/admin/kick' "
                 "onsubmit='return confirm(\"Kick this visitor now?\")'>"
