@@ -174,6 +174,34 @@ static const char ADMIN_HEAD_BARE[] =
 
 static const char ADMIN_FOOT[] = "</div></body></html>";
 
+// Dashboard live-poll script. Polls /admin/stats.json every 2s, computes
+// per-device rates from byte deltas, and updates the stat cards + table.
+// (Kept free of '%' so it can be emitted via snprintf with a "%s" format.)
+#define ADMIN_DASH_JS \
+"<script>" \
+"var prev={},pt=0;" \
+"function hbps(b){var u=['bps','Kbps','Mbps'],i=0;while(b>=1000&&i<2){b/=1000;i++}return b.toFixed(i?1:0)+' '+u[i]}" \
+"function hb(k){var u=['KB','MB','GB'],i=0;while(k>=1024&&i<2){k/=1024;i++}return k.toFixed(i?1:0)+' '+u[i]}" \
+"function esc(s){return s.replace(/[&<>]/g,function(c){return c=='&'?'&amp;':c=='<'?'&lt;':'&gt;'})}" \
+"function tick(){fetch('/admin/stats.json').then(function(r){return r.json()}).then(function(d){" \
+"document.getElementById('c-conn').textContent=d.conn;" \
+"document.getElementById('c-ch').textContent=d.ch;" \
+"var now=Date.now()/1000,dt=Math.max(now-pt,0.5),aD=0,aU=0;" \
+"var rows=d.clients.map(function(c){" \
+"var p=prev[c.ip]||{dn:c.dn,up:c.up};" \
+"var dn=Math.max((c.dn-p.dn)*1024*8/dt,0),up=Math.max((c.up-p.up)*1024*8/dt,0);" \
+"aD+=dn;aU+=up;prev[c.ip]={dn:c.dn,up:c.up};" \
+"var nm=c.name?esc(c.name):'<span class=muted>&mdash;</span>';" \
+"var h=c.host?esc(c.host):'';" \
+"return '<tr><td>'+c.ip+'<div class=muted>'+h+'</div></td><td>'+nm+'</td><td>'+c.rssi+' dBm</td><td>'+hbps(dn)+'</td><td>'+hbps(up)+'</td><td>'+hb(c.dn+c.up)+'</td></tr>'" \
+"}).join('');" \
+"document.getElementById('live').innerHTML=d.clients.length?rows:'<tr><td colspan=6 class=muted>(nobody connected)</td></tr>';" \
+"document.getElementById('c-down').textContent=hbps(aD);" \
+"document.getElementById('c-up').textContent=hbps(aU);" \
+"pt=now}).catch(function(e){})}" \
+"tick();setInterval(tick,2000);" \
+"</script>"
+
 // ── Portal welcome page (GET /) ───────────────────────────────────────────────
 static const char PORTAL_WELCOME_HTML[] =
     "<!DOCTYPE html><html><head>"

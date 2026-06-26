@@ -20,3 +20,7 @@ void shaper_set_override(uint32_t ip_nbo, int kbps);
 // call, and zero it. Used by the accounting tick to fold usage into the
 // persistent per-visitor total. Returns 0 if the IP has no live entry.
 uint64_t shaper_take_bytes(uint32_t ip_nbo);
+
+// Read the cumulative forwarded byte totals for IP (down/up), for the live
+// dashboard. These are not zeroed (until the entry is recycled). 0 if no entry.
+void shaper_get_totals(uint32_t ip_nbo, uint64_t *down, uint64_t *up);

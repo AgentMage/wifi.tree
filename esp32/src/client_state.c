@@ -225,6 +225,41 @@ int client_leaf_seconds_left(const client_t *c, int ttl_seconds) {
     return left > 0 ? (int)left : 0;
 }
 
+int clients_live_view(client_view_t *out, int max) {
+    wifi_sta_list_t sl;
+    if (esp_wifi_ap_get_sta_list(&sl) != ESP_OK || sl.num == 0) return 0;
+
+    esp_netif_pair_mac_ip_t pairs[ESP_WIFI_MAX_CONN_NUM];
+    int num = sl.num;
+    for (int i = 0; i < num; i++) memcpy(pairs[i].mac, sl.sta[i].mac, 6);
+
+    esp_netif_t *ap = wifi_ap_netif();
+    if (!ap || esp_netif_dhcps_get_clients_by_mac(ap, num, pairs) != ESP_OK) return 0;
+
+    int outn = 0;
+    for (int i = 0; i < num && outn < max; i++) {
+        client_view_t *v = &out[outn];
+        memset(v, 0, sizeof(*v));
+        v->ip   = pairs[i].ip.addr;
+        v->rssi = sl.sta[i].rssi;
+
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        for (int j = 0; j < MAX_CLIENTS; j++) {
+            if (s_clients[j].used && memcmp(s_clients[j].mac, sl.sta[i].mac, 6) == 0) {
+                strlcpy(v->name, s_clients[j].name, sizeof(v->name));
+                strlcpy(v->hostname, s_clients[j].hostname, sizeof(v->hostname));
+                v->total_connected_s = s_clients[j].total_connected_s;
+                break;
+            }
+        }
+        xSemaphoreGive(s_lock);
+
+        if (v->ip) shaper_get_totals(v->ip, &v->down, &v->up);
+        outn++;
+    }
+    return outn;
+}
+
 int clients_count(void) {
     wifi_sta_list_t wifi_sta;
     if (esp_wifi_ap_get_sta_list(&wifi_sta) != ESP_OK) return 0;

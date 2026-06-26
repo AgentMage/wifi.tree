@@ -14,6 +14,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_wifi.h"
 
 #define TAG "http"
 #define PORTAL_REDIRECT "http://" AP_IP_STR "/"
@@ -129,6 +130,20 @@ static bool hex_to_mac(const char *s, uint8_t mac[6]) {
         mac[i] = (uint8_t)strtol(b, NULL, 16);
     }
     return true;
+}
+
+// Escapes a string for embedding inside a JSON double-quoted value. Leaves
+// HTML metachars raw (the browser HTML-escapes on render); handles ", \, control.
+static void json_escape(char *dst, size_t dstsz, const char *src) {
+    size_t i = 0;
+    for (; *src && i + 7 < dstsz; src++) {
+        unsigned char c = (unsigned char)*src;
+        if (c == '"' || c == '\\') { dst[i++] = '\\'; dst[i++] = c; }
+        else if (c == '\n') { dst[i++] = '\\'; dst[i++] = 'n'; }
+        else if (c < 0x20)  { i += snprintf(dst + i, dstsz - i, "\\u%04x", c); }
+        else dst[i++] = c;
+    }
+    dst[i] = '\0';
 }
 
 // Escapes <, >, &, ", ' for safe HTML embedding of user-supplied strings.
@@ -389,14 +404,24 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     int cap  = config_connected_cap_seconds();
     int dcap = config_data_cap_mb();
 
+    uint8_t pri = 0;
+    wifi_second_chan_t sec;
+    esp_wifi_get_channel(&pri, &sec);
+
     int o = snprintf(body, BODY_SZ,
         "<div class='cards'>"
         "<div class='stat'><div class='n' id='c-conn'>%d</div><div class='l'>connected now</div></div>"
-        "<div class='stat'><div class='n'>%d</div><div class='l'>known visitors</div></div>"
-        "<div class='stat'><div class='n' id='c-up'>%s</div><div class='l'>uplink</div></div>"
+        "<div class='stat'><div class='n' id='c-down'>&ndash;</div><div class='l'>download</div></div>"
+        "<div class='stat'><div class='n' id='c-up'>&ndash;</div><div class='l'>upload</div></div>"
+        "<div class='stat'><div class='n' id='c-ch'>%d</div><div class='l'>channel</div></div>"
         "</div>"
+        "<p class='muted' style='margin-top:-10px'>uplink: %s &middot; %d known visitor(s)</p>"
+        "<h2>Connected now</h2>"
+        "<table><thead><tr><th>device</th><th>name</th><th>signal</th>"
+        "<th>down</th><th>up</th><th>total</th></tr></thead>"
+        "<tbody id='live'><tr><td colspan='6' class='muted'>loading&hellip;</td></tr></tbody></table>"
         "<h2>Visitors</h2>",
-        clients_count(), n, wifi_has_uplink() ? "online" : "&hellip;");
+        clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
     for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
         char nm[128], hn[128], machex[13];
@@ -474,6 +499,8 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         o += snprintf(body + o, BODY_SZ - o,
             "<p class='muted'>No visitors yet.</p>");
 
+    o += snprintf(body + o, BODY_SZ - o, "%s", ADMIN_DASH_JS);
+
     if (o > BODY_SZ - 1) o = BODY_SZ - 1; // snprintf returns would-be length; clamp
     esp_err_t r = send_admin(req, body, o);
     free(list);
@@ -506,6 +533,51 @@ static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
         config_leaf_ttl_seconds() / 60, config_client_kbps(),
         config_connected_cap_seconds() / 60, config_data_cap_mb());
     return send_admin(req, body, len);
+}
+
+// GET /admin/stats.json — live data for the dashboard's 2s poll.
+static esp_err_t admin_stats_json(httpd_req_t *req) {
+    if (!config_has_admin_password() || !admin_authed(req)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{}", 2);
+        return ESP_OK;
+    }
+    const int SZ = 4096;
+    client_view_t *v = malloc(sizeof(client_view_t) * 16);
+    char *buf = malloc(SZ);
+    if (!v || !buf) {
+        free(v); free(buf);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+    int n = clients_live_view(v, 16);
+
+    uint8_t pri = 0;
+    wifi_second_chan_t sec;
+    esp_wifi_get_channel(&pri, &sec);
+
+    int o = snprintf(buf, SZ, "{\"conn\":%d,\"ch\":%d,\"up\":%d,\"clients\":[",
+                     clients_count(), pri, wifi_has_uplink() ? 1 : 0);
+    for (int i = 0; i < n && o < SZ - 320; i++) {
+        const uint8_t *b = (const uint8_t *)&v[i].ip;
+        char nm[120], hn[100];
+        json_escape(nm, sizeof(nm), v[i].name);
+        json_escape(hn, sizeof(hn), v[i].hostname);
+        o += snprintf(buf + o, SZ - o,
+            "%s{\"ip\":\"%u.%u.%u.%u\",\"name\":\"%s\",\"host\":\"%s\",\"rssi\":%d,"
+            "\"dn\":%lu,\"up\":%lu,\"min\":%lu}",
+            i ? "," : "", b[0], b[1], b[2], b[3], nm, hn, v[i].rssi,
+            (unsigned long)(v[i].down >> 10), (unsigned long)(v[i].up >> 10),
+            (unsigned long)(v[i].total_connected_s / 60));
+    }
+    o += snprintf(buf + o, SZ - o, "]}");
+    if (o > SZ - 1) o = SZ - 1;
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, o);
+    free(v); free(buf);
+    return ESP_OK;
 }
 
 static esp_err_t admin_get_handler(httpd_req_t *req) {
@@ -688,6 +760,7 @@ void http_server_start_portal(void) {
     httpd_uri_t admin[] = {
         { .uri = "/admin",          .method = HTTP_GET,  .handler = admin_get_handler },
         { .uri = "/admin/settings", .method = HTTP_GET,  .handler = admin_settings_get_handler },
+        { .uri = "/admin/stats.json",.method = HTTP_GET, .handler = admin_stats_json },
         { .uri = "/admin/setpw",    .method = HTTP_POST, .handler = admin_setpw_handler },
         { .uri = "/admin/login",    .method = HTTP_POST, .handler = admin_login_handler },
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },

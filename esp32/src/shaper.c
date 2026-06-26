@@ -13,7 +13,8 @@ typedef struct {
     int64_t  tokens[2];
     int64_t  last_us[2];
     int      override_kbps;  // -1 = use global default
-    uint64_t bytes;          // forwarded bytes (up+down) since last drain
+    uint64_t bytes;          // forwarded bytes (up+down) since last budget drain
+    uint64_t cum[2];         // cumulative forwarded bytes [0]=down [1]=up (live view)
     bool     used;
 } entry_t;
 
@@ -38,6 +39,7 @@ static entry_t *find_or_make(uint32_t ip_nbo, int64_t now) {
     e->used = true;
     e->override_kbps = -1;
     e->bytes = 0;
+    e->cum[0] = e->cum[1] = 0;
     e->tokens[0] = e->tokens[1] = 0;
     e->last_us[0] = e->last_us[1] = 0; // first packet accrues a full burst of credit
     (void)now;
@@ -53,6 +55,7 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
     int kbps = e->override_kbps >= 0 ? e->override_kbps : config_client_kbps();
     if (kbps <= 0) {                         // 0 = uncapped
         e->bytes += len;                     // still metered for the data budget
+        e->cum[dir] += len;
         taskEXIT_CRITICAL(&s_mux);
         return true;
     }
@@ -64,10 +67,25 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
         if (e->tokens[dir] > burst) e->tokens[dir] = burst;
         e->last_us[dir] = now;
     }
-    if (e->tokens[dir] >= len) { e->tokens[dir] -= len; admit = true; e->bytes += len; }
+    if (e->tokens[dir] >= len) { e->tokens[dir] -= len; admit = true; e->bytes += len; e->cum[dir] += len; }
     else                         admit = false;
     taskEXIT_CRITICAL(&s_mux);
     return admit;
+}
+
+void shaper_get_totals(uint32_t ip_nbo, uint64_t *down, uint64_t *up) {
+    uint64_t d = 0, u = 0;
+    taskENTER_CRITICAL(&s_mux);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_tab[i].used && s_tab[i].ip == ip_nbo) {
+            d = s_tab[i].cum[0];
+            u = s_tab[i].cum[1];
+            break;
+        }
+    }
+    taskEXIT_CRITICAL(&s_mux);
+    if (down) *down = d;
+    if (up)   *up = u;
 }
 
 uint64_t shaper_take_bytes(uint32_t ip_nbo) {

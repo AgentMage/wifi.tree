@@ -24,7 +24,23 @@ typedef struct {
 } client_t;
 
 // Load any persisted records from NVS and prepare the in-RAM table.
+// A snapshot row for the live dashboard: one currently-associated station,
+// joined with its persistent record and cumulative shaper byte counts.
+typedef struct {
+    uint32_t ip;                 // network byte order
+    char     name[41];
+    char     hostname[33];
+    int      rssi;               // dBm
+    uint32_t total_connected_s;
+    uint64_t down;               // cumulative forwarded bytes
+    uint64_t up;
+} client_view_t;
+
 void clients_init(void);
+
+// Fill `out` with up to `max` currently-associated stations (RSSI + IP joined
+// to their record + live byte totals). Returns the count.
+int clients_live_view(client_view_t *out, int max);
 
 // Write the table to NVS if it has changed since the last flush (no-op when
 // clean). Cheap when unchanged; call periodically (e.g. the 30s accounting tick).
