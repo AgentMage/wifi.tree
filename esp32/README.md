@@ -40,7 +40,7 @@ setup mode, slow while connecting, and stays solid once the uplink is up.
 | Internet gated by leaf | Yes | Yes (lwIP forward hook, on/off) |
 | Leaf expiry | Yes | Yes (TTL, admin-configurable) |
 | Data metering / quota | Yes | No |
-| Bandwidth shaping | `tc` per client | No |
+| Per-client bandwidth cap | `tc` (0.1 Mbit/s default) | Token bucket, default 100 kbps |
 | Admin panel | Yes (port 8090, LAN-side) | Yes (`/admin`, on the AP) |
 | HTTPS | Yes (self-signed) | No |
 | Configurable copy/colors | Yes (portal.json) | Hardcoded to spec defaults |

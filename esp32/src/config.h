@@ -9,6 +9,10 @@ void config_init(void);
 int  config_leaf_ttl_seconds(void);
 void config_set_leaf_ttl_seconds(int seconds);
 
+// Per-client bandwidth cap in kbit/s. 0 => uncapped. Default 100.
+int  config_client_kbps(void);
+void config_set_client_kbps(int kbps);
+
 // Admin password (stored as salted SHA-256, never plaintext).
 bool config_has_admin_password(void);
 void config_set_admin_password(const char *pw);

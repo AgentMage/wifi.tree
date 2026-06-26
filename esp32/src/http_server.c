@@ -327,18 +327,20 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<p class='sub'>Uplink: <strong>%s</strong> &middot; %d device(s) connected</p>"
         "</div>"
         "<div class='card'>"
-        "<p class='headline' style='font-size:1em'>Leaf freshness</p>"
+        "<p class='headline' style='font-size:1em'>Settings</p>"
         "<form method='POST' action='/admin/settings'>"
-        "<input type='number' name='ttl_min' min='0' value='%d' "
-        "placeholder='minutes (0 = never expires)'>"
+        "<label style='font-size:13px;opacity:.7'>Leaf freshness (minutes, 0 = never)</label>"
+        "<input type='number' name='ttl_min' min='0' value='%d'>"
+        "<label style='font-size:13px;opacity:.7'>Per-device speed (kbps, 0 = uncapped)</label>"
+        "<input type='number' name='kbps' min='0' value='%d'>"
         "<button type='submit'>Save</button>"
         "</form>"
-        "<p class='note'>Minutes a leaf stays fresh. 0 = never expires.</p>"
+        "<p class='note'>Each visitor is capped to this speed up and down.</p>"
         "</div>"
         "<div class='card'>"
         "<p class='headline' style='font-size:1em'>Visitors this session</p>",
         wifi_has_uplink() ? "connected" : "connecting…",
-        clients_count(), ttl / 60);
+        clients_count(), ttl / 60, config_client_kbps());
 
     for (int i = 0; i < n && o < BODY_SZ - 400; i++) {
         char nm[128], hn[128];
@@ -434,9 +436,11 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     char rbody[256] = {0};
     int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
     if (n > 0) rbody[n] = '\0';
-    char ttl[16] = {0};
+    char ttl[16] = {0}, kbps[16] = {0};
     get_field(rbody, "ttl_min", ttl, sizeof(ttl));
-    if (ttl[0]) config_set_leaf_ttl_seconds(atoi(ttl) * 60);
+    get_field(rbody, "kbps",    kbps, sizeof(kbps));
+    if (ttl[0])  config_set_leaf_ttl_seconds(atoi(ttl) * 60);
+    if (kbps[0]) config_set_client_kbps(atoi(kbps));
     return redirect_to(req, "/admin", NULL);
 }
 

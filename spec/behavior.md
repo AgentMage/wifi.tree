@@ -78,8 +78,10 @@ Internet access **is gated by the leaf**: a custom lwIP IPv4 forwarding hook
 doesn't hold an active leaf. The captive portal and DNS are addressed to the AP
 itself (`10.42.0.1`), so unregistered clients can still load the portal and
 resolve names — they just can't reach the internet until they grow a leaf, and
-lose it again when the leaf expires. (There is still no per-client *bandwidth*
-shaping or data quota — that stays Pi-only; the ESP32 gate is on/off only.)
+lose it again when the leaf expires. The same hook applies a per-client
+token-bucket **bandwidth cap** (default 100 kbps each way, operator-configurable
+at `wifi.tree/admin`) — deliberately slow, since the point is gentle shared
+woods wifi, not fast internet. There is still no monthly data quota (Pi-only).
 
 ## Configurable Parameters
 

@@ -4,17 +4,29 @@
 #include "esp_random.h"
 #include "psa/crypto.h"
 
-#define NS               "cfg"
-#define DEFAULT_TTL_SECS (3 * 3600)
+#define NS                "cfg"
+#define DEFAULT_TTL_SECS  (3 * 3600)
+#define DEFAULT_KBPS      100
 
-static int s_ttl = DEFAULT_TTL_SECS;
+static int s_ttl  = DEFAULT_TTL_SECS;
+static int s_kbps = DEFAULT_KBPS;
 
 void config_init(void) {
     psa_crypto_init();
     nvs_handle_t h;
     if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
         int32_t v;
-        if (nvs_get_i32(h, "ttl", &v) == ESP_OK) s_ttl = v;
+        if (nvs_get_i32(h, "ttl", &v) == ESP_OK)  s_ttl = v;
+        if (nvs_get_i32(h, "kbps", &v) == ESP_OK) s_kbps = v;
+        nvs_close(h);
+    }
+}
+
+static void save_i32(const char *key, int val) {
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_i32(h, key, val);
+        nvs_commit(h);
         nvs_close(h);
     }
 }
@@ -26,12 +38,17 @@ int config_leaf_ttl_seconds(void) {
 void config_set_leaf_ttl_seconds(int seconds) {
     if (seconds < 0) seconds = 0;
     s_ttl = seconds;
-    nvs_handle_t h;
-    if (nvs_open(NS, NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_i32(h, "ttl", seconds);
-        nvs_commit(h);
-        nvs_close(h);
-    }
+    save_i32("ttl", seconds);
+}
+
+int config_client_kbps(void) {
+    return s_kbps;
+}
+
+void config_set_client_kbps(int kbps) {
+    if (kbps < 0) kbps = 0;
+    s_kbps = kbps;
+    save_i32("kbps", kbps);
 }
 
 // ── Password (salted SHA-256) ─────────────────────────────────────────────────
