@@ -389,13 +389,30 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
         return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
     }
 
-    // New visitor, or leaf expired — show the customizable grow-a-leaf welcome.
-    char whead[200], wtext[700], accent[10];
-    html_escape(whead, sizeof(whead), portalcfg_get("whead"));
-    escape_br(wtext, sizeof(wtext), portalcfg_get("wtext"));
+    // No fresh leaf. A returning visitor (we have their name) gets a personalized
+    // "welcome back / renew" card with the name pre-filled; a brand-new visitor
+    // gets the customizable welcome + empty name form.
+    char accent[10];
     accent_safe(accent, sizeof(accent), portalcfg_get("accent"));
 
-    char body[1100];
+    char headline[320], subline[768], nameval[256];
+    const char *btn;
+    if (c && c->name[0]) {                       // known, leaf wilted → renew
+        char nm[256];
+        html_escape(nm, sizeof(nm), c->name);
+        snprintf(headline, sizeof(headline), "Welcome back, %s &#x1F33F;", nm);
+        strlcpy(subline, "Your leaf has wilted. Grow a fresh one to get back online.",
+                sizeof(subline));
+        strlcpy(nameval, nm, sizeof(nameval));
+        btn = "Renew my leaf &#x1F33F;";
+    } else {                                     // brand-new visitor
+        html_escape(headline, sizeof(headline), portalcfg_get("whead"));
+        escape_br(subline, sizeof(subline), portalcfg_get("wtext"));
+        nameval[0] = '\0';
+        btn = "Grow a Leaf &#x1F33F;";
+    }
+
+    char body[1600];
     int len = snprintf(body, sizeof(body),
         "<div class='card'>"
         "<p class='headline' style='color:%s'>%s</p>"
@@ -403,10 +420,10 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
         "</div>"
         "<div class='card'>"
         "<form method='POST'>"
-        "<input name='name' placeholder='enter your name' maxlength='40' required>"
-        "<button type='submit'>Grow a Leaf &#x1F33F;</button>"
+        "<input name='name' value='%s' placeholder='enter your name' maxlength='40' required>"
+        "<button type='submit'>%s</button>"
         "</form></div>",
-        accent, whead, wtext);
+        accent, headline, subline, nameval, btn);
     if (len >= (int)sizeof(body)) len = sizeof(body) - 1;
 
     send_portal_head(req);
