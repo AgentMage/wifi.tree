@@ -201,6 +201,26 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo) {
     xSemaphoreGive(s_lock);
 }
 
+void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
+                                 uint32_t *banned_out, int max, int *n_out) {
+    int nb = 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        client_t *c = &s_clients[i];
+        if (!c->used || c->banned) continue;
+        if (!client_leaf_active(c, ttl_s)) continue;  // only online users accrue
+        c->total_connected_s += elapsed_s;
+        mark_dirty();
+        if (cap_s > 0 && c->total_connected_s >= (uint32_t)cap_s) {
+            c->banned = true;
+            c->leaf_grown_us = 0;                      // close their session
+            if (nb < max && c->ip) banned_out[nb++] = c->ip;
+        }
+    }
+    xSemaphoreGive(s_lock);
+    if (n_out) *n_out = nb;
+}
+
 int clients_snapshot(client_t *out, int max) {
     int n = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);

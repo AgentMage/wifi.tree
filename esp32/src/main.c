@@ -5,6 +5,7 @@
 #include "config.h"
 #include "authz.h"
 #include "shaper.h"
+#include "accounting.h"
 #include "reset_button.h"
 #include "led.h"
 #include "freertos/FreeRTOS.h"
@@ -48,6 +49,7 @@ void app_main(void) {
         clients_start_hostname_capture();        // record client hostnames via DHCP
         dns_server_start(wifi_ap_ip(), false);  // spoof captive domains, forward the rest
         http_server_start_portal();
+        accounting_start();                      // credit connected time, enforce cap
         xTaskCreate(portal_led_task, "portal_led", 1024, NULL, 2, NULL);
         ESP_LOGI(TAG, "Connect to '%s'", "wifi.tree");
     }

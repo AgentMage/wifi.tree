@@ -13,6 +13,12 @@ void config_set_leaf_ttl_seconds(int seconds);
 int  config_client_kbps(void);
 void config_set_client_kbps(int kbps);
 
+// Lifetime connected-time budget per visitor, in seconds. 0 => no limit.
+// When a visitor's accumulated online time reaches this, they're cut off until
+// an admin resets them. Default 0 (off).
+int  config_connected_cap_seconds(void);
+void config_set_connected_cap_seconds(int seconds);
+
 // Admin password (stored as salted SHA-256, never plaintext).
 bool config_has_admin_password(void);
 void config_set_admin_password(const char *pw);

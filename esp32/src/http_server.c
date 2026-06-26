@@ -236,9 +236,36 @@ static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) 
     return ESP_OK;
 }
 
+// Renders the "you've used your share" card for a visitor over their time budget.
+static esp_err_t send_over_budget_card(httpd_req_t *req, client_t *c) {
+    char safe_name[256];
+    html_escape(safe_name, sizeof(safe_name), c->name[0] ? c->name : "friend");
+
+    unsigned used_min = c->total_connected_s / 60;
+    char body[768];
+    int len = snprintf(body, sizeof(body),
+        "<div class='card'>"
+        "<p class='headline' style='color:#d8b24a'>Your leaf has fallen, %s &#x1F342;</p>"
+        "<p class='sub'>You've used your share of connected time"
+        " (<strong>%u min</strong>) at this gathering.</p>"
+        "<p class='sub' style='opacity:.7'>Find the host to be let back on if you "
+        "need more.</p>"
+        "</div>",
+        safe_name, used_min);
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, body, len);
+    httpd_resp_send_chunk(req, PORTAL_FOOT, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static esp_err_t portal_get_handler(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
     client_t *c = clients_find_by_ip(client_ip(req));
+    if (c && c->banned)
+        return send_over_budget_card(req, c);
     if (client_leaf_active(c, ttl))
         return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
 
@@ -265,6 +292,8 @@ static esp_err_t portal_post_handler(httpd_req_t *req) {
     // and open the internet gate for this IP until the leaf expires.
     uint32_t ip = client_ip(req);
     client_t *c = clients_find_by_ip(ip);
+    if (c && c->banned)             // over their time budget — no new leaf
+        return send_over_budget_card(req, c);
     if (c) clients_grow_leaf(c, name);
     if (ip) {
         int ttl = config_leaf_ttl_seconds();

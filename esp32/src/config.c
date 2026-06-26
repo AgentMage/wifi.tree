@@ -7,9 +7,11 @@
 #define NS                "cfg"
 #define DEFAULT_TTL_SECS  (3 * 3600)
 #define DEFAULT_KBPS      100
+#define DEFAULT_TCAP_SECS 0
 
 static int s_ttl  = DEFAULT_TTL_SECS;
 static int s_kbps = DEFAULT_KBPS;
+static int s_tcap = DEFAULT_TCAP_SECS;
 
 void config_init(void) {
     psa_crypto_init();
@@ -18,6 +20,7 @@ void config_init(void) {
         int32_t v;
         if (nvs_get_i32(h, "ttl", &v) == ESP_OK)  s_ttl = v;
         if (nvs_get_i32(h, "kbps", &v) == ESP_OK) s_kbps = v;
+        if (nvs_get_i32(h, "tcap", &v) == ESP_OK) s_tcap = v;
         nvs_close(h);
     }
 }
@@ -49,6 +52,16 @@ void config_set_client_kbps(int kbps) {
     if (kbps < 0) kbps = 0;
     s_kbps = kbps;
     save_i32("kbps", kbps);
+}
+
+int config_connected_cap_seconds(void) {
+    return s_tcap;
+}
+
+void config_set_connected_cap_seconds(int seconds) {
+    if (seconds < 0) seconds = 0;
+    s_tcap = seconds;
+    save_i32("tcap", seconds);
 }
 
 // ── Password (salted SHA-256) ─────────────────────────────────────────────────

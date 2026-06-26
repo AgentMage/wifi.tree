@@ -55,3 +55,12 @@ int clients_snapshot(client_t *out, int max);
 // Clear the leaf of whichever client currently holds this IP (network byte
 // order), so they revert to the new-visitor flow. No-op if not found.
 void clients_clear_leaf_by_ip(uint32_t ip_nbo);
+
+// Accounting tick: credit `elapsed_s` of online time to every visitor whose
+// leaf is currently active (ttl_s = leaf TTL used to judge "online"). If
+// cap_s > 0, any visitor reaching the cap is banned and their leaf cleared;
+// the IPs of newly-banned visitors are written to banned_out (up to `max`) and
+// *n_out is set, so the caller can revoke their internet grants. Marks the
+// table dirty when totals change (caller should clients_flush() afterward).
+void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
+                                 uint32_t *banned_out, int max, int *n_out);
