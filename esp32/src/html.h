@@ -110,6 +110,70 @@ static const char PORTAL_FOOT[] =
     "<p class='foot'>Shared, fair, bandwidth-limited.<br>Be kind, keep it light.</p>"
     "</div></body></html>";
 
+// ── Admin chrome (mirrors the Pi's wifitree-webadmin.py theme) ────────────────
+#define ADMIN_CSS \
+  "*{box-sizing:border-box}" \
+  "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" \
+    "background:#0b1a0f;color:#eaffea;margin:0}" \
+  "header{background:#12251a;border-bottom:1px solid #1f3d29;padding:14px 18px;" \
+    "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}" \
+  "header h1{margin:0;font-size:1.2em;color:#9fe89f}" \
+  "header nav a,header nav form{color:#9fe89f;text-decoration:none;font-size:.9em;opacity:.85}" \
+  "header nav a.on{opacity:1;text-decoration:underline}" \
+  ".wrap{max-width:900px;margin:0 auto;padding:18px}" \
+  ".cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}" \
+  ".stat{background:#12251a;border:1px solid #1f3d29;border-radius:12px;" \
+    "padding:12px 16px;flex:1;min-width:96px}" \
+  ".stat .n{font-size:1.5em;font-weight:700;color:#9fe89f}" \
+  ".stat .l{font-size:.75em;opacity:.7;margin-top:2px}" \
+  "h2{color:#9fe89f;font-size:1em;border-bottom:1px solid #1f3d29;" \
+    "padding-bottom:6px;margin:22px 0 10px}" \
+  "table{width:100%;border-collapse:collapse;font-size:.88em}" \
+  "th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #1a2f20;vertical-align:middle}" \
+  "th{font-size:.72em;text-transform:uppercase;opacity:.6;font-weight:600}" \
+  ".pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.74em;font-weight:600}" \
+  ".pill.ok{background:#1b3a1f;color:#8ef08e}" \
+  ".pill.warn{background:#3a2f15;color:#ffd54f}" \
+  ".pill.bad{background:#3a1b1b;color:#ff8a80}" \
+  ".bar{height:7px;background:#0b1a0f;border:1px solid #1f3d29;border-radius:99px;" \
+    "overflow:hidden;width:80px;display:inline-block;vertical-align:middle}" \
+  ".bar .f{display:block;height:100%;border-radius:99px;min-width:2px}" \
+  "form.inline{display:inline;margin:0}" \
+  "input[type=number],input[type=text],input[type=password]{background:#0b1a0f;" \
+    "border:1px solid #2e7d32;color:#eaffea;border-radius:7px;padding:6px 8px;font-size:.9em}" \
+  "button{background:#2e7d32;color:#fff;border:none;border-radius:7px;" \
+    "padding:7px 11px;font-size:.85em;cursor:pointer;margin:1px}" \
+  "button.sec{background:#33503a}button.danger{background:#a33}" \
+  ".muted{opacity:.55;font-size:.85em}" \
+  ".card2{background:#12251a;border:1px solid #1f3d29;border-radius:14px;padding:16px 18px;margin-bottom:16px}" \
+  ".login{max-width:340px;margin:9vh auto;background:#12251a;border:1px solid #1f3d29;" \
+    "border-radius:16px;padding:26px}" \
+  ".login input{width:100%;padding:12px;font-size:1.05em;margin-bottom:12px}" \
+  ".login button{width:100%;padding:13px;font-size:1.05em}" \
+  ".login h1{color:#9fe89f;text-align:center;margin:.2em 0}"
+
+// Nav shown on authed admin pages. Extended in later phases (customize, password).
+#define ADMIN_NAV \
+  "<nav><a href='/admin'>dashboard</a> &middot; " \
+  "<a href='/admin/settings'>settings</a> &middot; " \
+  "<a href='/admin/logout'>log out</a></nav>"
+
+// Authed page chrome: header + nav, then body, then ADMIN_FOOT.
+static const char ADMIN_HEAD[] =
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>wifi.tree admin</title><style>" ADMIN_CSS "</style></head><body>"
+    "<header><h1>&#x1F333; wifi.tree &mdash; admin</h1>" ADMIN_NAV "</header>"
+    "<div class='wrap'>";
+
+// Bare chrome for unauthenticated pages (login / set password) — no nav.
+static const char ADMIN_HEAD_BARE[] =
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>wifi.tree admin</title><style>" ADMIN_CSS "</style></head><body>";
+
+static const char ADMIN_FOOT[] = "</div></body></html>";
+
 // ── Portal welcome page (GET /) ───────────────────────────────────────────────
 static const char PORTAL_WELCOME_HTML[] =
     "<!DOCTYPE html><html><head>"

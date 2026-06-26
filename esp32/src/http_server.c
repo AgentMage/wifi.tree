@@ -352,11 +352,22 @@ static esp_err_t redirect_to(httpd_req_t *req, const char *loc, const char *cook
     return ESP_OK;
 }
 
-static esp_err_t send_admin_page(httpd_req_t *req, const char *body, int len) {
+// Authed admin page: header + nav chrome around the body.
+static esp_err_t send_admin(httpd_req_t *req, const char *body, int len) {
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, ADMIN_HEAD, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, body, len);
-    httpd_resp_send_chunk(req, PORTAL_FOOT, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, ADMIN_FOOT, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+// Unauthenticated admin page (login / set password): themed but no nav.
+static esp_err_t send_admin_bare(httpd_req_t *req, const char *body, int len) {
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, ADMIN_HEAD_BARE, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, body, len);
+    httpd_resp_send_chunk(req, ADMIN_FOOT, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
@@ -375,58 +386,40 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     }
     int n = clients_snapshot(list, 16);
 
-    int o = snprintf(body, BODY_SZ,
-        "<div class='card'>"
-        "<p class='headline' style='color:#9fe89f'>Admin &#x1F510;</p>"
-        "<p class='sub'>Uplink: <strong>%s</strong> &middot; %d device(s) connected</p>"
-        "</div>"
-        "<div class='card'>"
-        "<p class='headline' style='font-size:1em'>Settings</p>"
-        "<form method='POST' action='/admin/settings'>"
-        "<label style='font-size:13px;opacity:.7'>Leaf freshness (minutes, 0 = never)</label>"
-        "<input type='number' name='ttl_min' min='0' value='%d'>"
-        "<label style='font-size:13px;opacity:.7'>Per-device speed (kbps, 0 = uncapped)</label>"
-        "<input type='number' name='kbps' min='0' value='%d'>"
-        "<label style='font-size:13px;opacity:.7'>Connected-time budget per visitor "
-        "(minutes, 0 = unlimited)</label>"
-        "<input type='number' name='tcap_min' min='0' value='%d'>"
-        "<label style='font-size:13px;opacity:.7'>Data budget per visitor "
-        "(MB, 0 = unlimited)</label>"
-        "<input type='number' name='dcap_mb' min='0' value='%d'>"
-        "<button type='submit'>Save</button>"
-        "</form>"
-        "<p class='note'>Speed caps each visitor up and down. The time and data "
-        "budgets are lifetime totals &mdash; past either, they're cut off until "
-        "you reset them.</p>"
-        "</div>"
-        "<div class='card'>"
-        "<p class='headline' style='font-size:1em'>Visitors</p>",
-        wifi_has_uplink() ? "connected" : "connecting…",
-        clients_count(), ttl / 60, config_client_kbps(),
-        config_connected_cap_seconds() / 60, config_data_cap_mb());
-
     int cap  = config_connected_cap_seconds();
     int dcap = config_data_cap_mb();
+
+    int o = snprintf(body, BODY_SZ,
+        "<div class='cards'>"
+        "<div class='stat'><div class='n' id='c-conn'>%d</div><div class='l'>connected now</div></div>"
+        "<div class='stat'><div class='n'>%d</div><div class='l'>known visitors</div></div>"
+        "<div class='stat'><div class='n' id='c-up'>%s</div><div class='l'>uplink</div></div>"
+        "</div>"
+        "<h2>Visitors</h2>",
+        clients_count(), n, wifi_has_uplink() ? "online" : "&hellip;");
+
     for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
         char nm[128], hn[128], machex[13];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
         html_escape(hn, sizeof(hn), list[i].hostname);
         mac_to_hex(machex, list[i].mac);
         int left = client_leaf_seconds_left(&list[i], ttl);
+
+        // Status pill: bad=over budget, warn=no/expired leaf, ok=fresh/active.
+        const char *pill = "ok";
         char status[48];
-        if (list[i].banned)                   snprintf(status, sizeof(status), "over budget");
-        else if (list[i].leaf_grown_us == 0)  snprintf(status, sizeof(status), "no leaf");
-        else if (!client_leaf_active(&list[i], ttl)) snprintf(status, sizeof(status), "expired");
-        else if (ttl <= 0)                    snprintf(status, sizeof(status), "fresh");
+        if (list[i].banned)       { pill = "bad";  snprintf(status, sizeof(status), "over budget"); }
+        else if (list[i].leaf_grown_us == 0)        { pill = "warn"; snprintf(status, sizeof(status), "no leaf"); }
+        else if (!client_leaf_active(&list[i], ttl)){ pill = "warn"; snprintf(status, sizeof(status), "expired"); }
+        else if (ttl <= 0)        { snprintf(status, sizeof(status), "fresh"); }
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
 
-        // Lifetime online time, shown as "used N min" (with the cap if one is set).
         char budget[40];
         unsigned used_min = list[i].total_connected_s / 60;
         if (cap > 0) snprintf(budget, sizeof(budget), "%u / %d min", used_min, cap / 60);
         else         snprintf(budget, sizeof(budget), "%u min", used_min);
 
-        // Lifetime data, as "X.Y MB" (integer math — no float printf on this build).
+        // Lifetime data as "X.Y MB" (integer math — no float printf on this build).
         char data[40];
         uint32_t mb = (uint32_t)(list[i].total_bytes >> 20);
         uint32_t tenths = (uint32_t)(((list[i].total_bytes & 0xFFFFF) * 10) >> 20);
@@ -436,7 +429,6 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
                                (unsigned long)mb, (unsigned long)tenths);
 
         // Per-user speed cap: -1 = global default, 0 = uncapped, else kbps.
-        // `capstr` is the human label; `capval` pre-fills the form input.
         char capstr[20], capval[12];
         if (list[i].bw_cap_kbps < 0)       { snprintf(capstr, sizeof(capstr), "default"); capval[0] = '\0'; }
         else if (list[i].bw_cap_kbps == 0) { snprintf(capstr, sizeof(capstr), "uncapped"); snprintf(capval, sizeof(capval), "0"); }
@@ -444,25 +436,22 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
                snprintf(capval, sizeof(capval), "%d", (int)list[i].bw_cap_kbps); }
 
         o += snprintf(body + o, BODY_SZ - o,
-            "<div style='border-top:1px solid #1f3d29;padding:10px 0'>"
-            "<p class='sub' style='margin:0 0 4px'>&#x1F33F; <strong>%s</strong>"
-            "%s%s <span style='opacity:.6'>&middot; %s</span></p>"
-            "<p class='sub' style='margin:0 0 8px;opacity:.6;font-size:13px'>"
-            "online %s &middot; %s &middot; speed %s</p>"
+            "<div class='card2'>"
+            "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px'>"
+            "<strong>&#x1F33F; %s</strong><span class='pill %s'>%s</span></div>"
+            "<div class='muted' style='margin:5px 0 10px'>%s%sonline %s &middot; %s &middot; speed %s</div>"
             "<div style='display:flex;gap:6px;flex-wrap:wrap'>",
-            nm, hn[0] ? " &middot; " : "", hn,
-            list[i].banned ? "<span style='color:#d8b24a'>over budget</span>" : status,
-            budget, data, capstr);
+            nm, pill, status,
+            hn[0] ? hn : "", hn[0] ? " &middot; " : "", budget, data, capstr);
 
-        // Per-user speed cap — MAC-keyed so it persists and works offline.
-        // Blank input = clear back to the global default.
+        // Per-user speed cap — MAC-keyed (persists, works offline). Blank = default.
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/userspeed' "
             "style='display:flex;gap:6px;margin:0;flex:1;min-width:150px'>"
             "<input type='hidden' name='mac' value='%s'>"
             "<input type='number' name='kbps' min='0' value='%s' placeholder='default' "
             "style='margin:0;flex:1'>"
-            "<button style='margin:0;padding:10px 12px'>Cap</button></form>",
+            "<button style='margin:0'>Cap</button></form>",
             machex, capval);
 
         if (list[i].ip) {  // kick acts on live traffic → needs the IP
@@ -470,58 +459,80 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             o += snprintf(body + o, BODY_SZ - o,
                 "<form method='POST' action='/admin/kick' style='margin:0'>"
                 "<input type='hidden' name='ip' value='%lu'>"
-                "<button style='margin:0;padding:10px 14px;background:#aa3333'>Kick</button>"
-                "</form>",
+                "<button class='danger' style='margin:0'>Kick</button></form>",
                 ip);
         }
-        // Reset clears both budgets (time + data) and lifts any ban. MAC-keyed
-        // so it works even when the visitor is offline.
+        // Reset clears both budgets and lifts any ban. MAC-keyed (works offline).
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/resettime' style='margin:0'>"
             "<input type='hidden' name='mac' value='%s'>"
-            "<button style='margin:0;padding:10px 12px;background:#1f3d29'>Reset</button>"
+            "<button class='sec' style='margin:0'>Reset</button>"
             "</form></div></div>",
             machex);
     }
     if (n == 0)
         o += snprintf(body + o, BODY_SZ - o,
-            "<p class='sub' style='opacity:.6'>Nobody yet.</p>");
-
-    o += snprintf(body + o, BODY_SZ - o,
-        "</div>"
-        "<form method='POST' action='/admin/logout'>"
-        "<button type='submit' style='background:#1f3d29'>Log out</button></form>");
+            "<p class='muted'>No visitors yet.</p>");
 
     if (o > BODY_SZ - 1) o = BODY_SZ - 1; // snprintf returns would-be length; clamp
-    esp_err_t r = send_admin_page(req, body, o);
+    esp_err_t r = send_admin(req, body, o);
     free(list);
     free(body);
     return r;
+}
+
+// GET /admin/settings — the global settings form on its own themed page.
+static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
+    if (!config_has_admin_password() || !admin_authed(req))
+        return redirect_to(req, "/admin", NULL);
+    char body[1400];
+    int len = snprintf(body, sizeof(body),
+        "<h2>Settings</h2>"
+        "<div class='card2'>"
+        "<form method='POST' action='/admin/settings'>"
+        "<label class='muted'>Leaf freshness (minutes, 0 = never)</label><br>"
+        "<input type='number' name='ttl_min' min='0' value='%d' style='width:120px'><br><br>"
+        "<label class='muted'>Default speed per device (kbps, 0 = uncapped)</label><br>"
+        "<input type='number' name='kbps' min='0' value='%d' style='width:120px'><br><br>"
+        "<label class='muted'>Connected-time budget per visitor (minutes, 0 = unlimited)</label><br>"
+        "<input type='number' name='tcap_min' min='0' value='%d' style='width:120px'><br><br>"
+        "<label class='muted'>Data budget per visitor (MB, 0 = unlimited)</label><br>"
+        "<input type='number' name='dcap_mb' min='0' value='%d' style='width:120px'><br><br>"
+        "<button type='submit'>Save settings</button>"
+        "</form></div>"
+        "<p class='muted'>Speed caps each visitor up and down. The time and data "
+        "budgets are lifetime totals &mdash; past either, a visitor is cut off "
+        "until you Reset them on the dashboard.</p>",
+        config_leaf_ttl_seconds() / 60, config_client_kbps(),
+        config_connected_cap_seconds() / 60, config_data_cap_mb());
+    return send_admin(req, body, len);
 }
 
 static esp_err_t admin_get_handler(httpd_req_t *req) {
     char body[700];
     if (!config_has_admin_password()) {
         int len = snprintf(body, sizeof(body),
-            "<div class='card'>"
-            "<p class='headline'>Set an admin password &#x1F510;</p>"
-            "<p class='sub'>Protects <strong>wifi.tree/admin</strong>. "
+            "<div class='login'>"
+            "<h1>&#x1F333; wifi.tree</h1>"
+            "<p class='muted' style='text-align:center'>set an admin password</p>"
+            "<p class='muted'>Protects <strong>wifi.tree/admin</strong>. "
             "Set this before anyone joins.</p>"
             "<form method='POST' action='/admin/setpw'>"
             "<input type='password' name='pw' placeholder='new admin password' required>"
             "<button type='submit'>Save password</button>"
             "</form></div>");
-        return send_admin_page(req, body, len);
+        return send_admin_bare(req, body, len);
     }
     if (!admin_authed(req)) {
         int len = snprintf(body, sizeof(body),
-            "<div class='card'>"
-            "<p class='headline'>Admin &#x1F510;</p>"
+            "<div class='login'>"
+            "<h1>&#x1F333; wifi.tree</h1>"
+            "<p class='muted' style='text-align:center'>admin panel</p>"
             "<form method='POST' action='/admin/login'>"
-            "<input type='password' name='pw' placeholder='admin password' required>"
+            "<input type='password' name='pw' placeholder='admin password' autofocus required>"
             "<button type='submit'>Log in</button>"
             "</form></div>");
-        return send_admin_page(req, body, len);
+        return send_admin_bare(req, body, len);
     }
     return admin_dashboard(req);
 }
@@ -570,7 +581,7 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     if (kbps[0]) config_set_client_kbps(atoi(kbps));
     if (tcap[0]) config_set_connected_cap_seconds(atoi(tcap) * 60);
     if (dcap[0]) config_set_data_cap_mb(atoi(dcap));
-    return redirect_to(req, "/admin", NULL);
+    return redirect_to(req, "/admin/settings", NULL);
 }
 
 // Reset one visitor's connected-time budget (and lift any over-budget ban).
@@ -676,13 +687,14 @@ void http_server_start_portal(void) {
     // Admin routes must be registered before the catch-alls so they win the match.
     httpd_uri_t admin[] = {
         { .uri = "/admin",          .method = HTTP_GET,  .handler = admin_get_handler },
+        { .uri = "/admin/settings", .method = HTTP_GET,  .handler = admin_settings_get_handler },
         { .uri = "/admin/setpw",    .method = HTTP_POST, .handler = admin_setpw_handler },
         { .uri = "/admin/login",    .method = HTTP_POST, .handler = admin_login_handler },
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },
         { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
         { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
         { .uri = "/admin/resettime",.method = HTTP_POST, .handler = admin_resettime_handler },
-        { .uri = "/admin/logout",   .method = HTTP_POST, .handler = admin_logout_handler },
+        { .uri = "/admin/logout",   .method = HTTP_GET,  .handler = admin_logout_handler },
     };
     for (int i = 0; i < (int)(sizeof(admin) / sizeof(admin[0])); i++)
         httpd_register_uri_handler(server, &admin[i]);
