@@ -46,10 +46,10 @@ static client_t *get_or_create(const uint8_t mac[6]) {
 static void on_ip_assigned(void *arg, esp_event_base_t base,
                            int32_t id, void *data) {
     ip_event_assigned_ip_to_client_t *e = (ip_event_assigned_ip_to_client_t *)data;
-    if (e->hostname[0] == '\0') return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     client_t *c = get_or_create(e->mac);
-    strlcpy(c->hostname, e->hostname, sizeof(c->hostname));
+    c->ip = e->ip.addr;
+    if (e->hostname[0]) strlcpy(c->hostname, e->hostname, sizeof(c->hostname));
     xSemaphoreGive(s_lock);
 }
 
@@ -75,6 +75,7 @@ client_t *clients_find_by_ip(uint32_t ip_nbo) {
         if (pairs[i].ip.addr == ip_nbo) {
             xSemaphoreTake(s_lock, portMAX_DELAY);
             client_t *c = get_or_create(pairs[i].mac);
+            c->ip = ip_nbo;
             xSemaphoreGive(s_lock);
             return c;
         }
@@ -109,6 +110,14 @@ int clients_count(void) {
     wifi_sta_list_t wifi_sta;
     if (esp_wifi_ap_get_sta_list(&wifi_sta) != ESP_OK) return 0;
     return wifi_sta.num;
+}
+
+void clients_clear_leaf_by_ip(uint32_t ip_nbo) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (s_clients[i].used && s_clients[i].ip == ip_nbo)
+            s_clients[i].leaf_grown_us = 0;
+    xSemaphoreGive(s_lock);
 }
 
 int clients_snapshot(client_t *out, int max) {

@@ -12,6 +12,7 @@ typedef struct {
     uint32_t ip;
     int64_t  tokens[2];
     int64_t  last_us[2];
+    int      override_kbps;  // -1 = use global default
     bool     used;
 } entry_t;
 
@@ -22,28 +23,38 @@ void shaper_init(void) {
     memset(s_tab, 0, sizeof(s_tab));
 }
 
-bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
-    int bps = config_client_kbps() * 125;   // kbit/s → bytes/s (1 kbit = 125 B)
-    if (bps <= 0) return true;               // 0 = uncapped
-    const int64_t burst = bps;               // 1 second of credit
-    int64_t now = esp_timer_get_time();
-    bool admit;
-
-    taskENTER_CRITICAL(&s_mux);
-    entry_t *e = NULL, *freeslot = NULL, *oldest = NULL;
+// Locate (or allocate) the entry for an IP. Caller holds s_mux.
+static entry_t *find_or_make(uint32_t ip_nbo, int64_t now) {
+    entry_t *freeslot = NULL, *oldest = NULL;
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (s_tab[i].used && s_tab[i].ip == ip_nbo) { e = &s_tab[i]; break; }
+        if (s_tab[i].used && s_tab[i].ip == ip_nbo) return &s_tab[i];
         if (!s_tab[i].used && !freeslot) freeslot = &s_tab[i];
         if (s_tab[i].used && (!oldest || s_tab[i].last_us[0] < oldest->last_us[0]))
             oldest = &s_tab[i];
     }
-    if (!e) {                                // first packet for this client
-        e = freeslot ? freeslot : oldest;
-        e->ip = ip_nbo;
-        e->used = true;
-        e->tokens[0] = e->tokens[1] = burst;
-        e->last_us[0] = e->last_us[1] = now;
+    entry_t *e = freeslot ? freeslot : oldest;
+    e->ip = ip_nbo;
+    e->used = true;
+    e->override_kbps = -1;
+    e->tokens[0] = e->tokens[1] = 0;
+    e->last_us[0] = e->last_us[1] = 0; // first packet accrues a full burst of credit
+    (void)now;
+    return e;
+}
+
+bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
+    int64_t now = esp_timer_get_time();
+    bool admit;
+
+    taskENTER_CRITICAL(&s_mux);
+    entry_t *e = find_or_make(ip_nbo, now);
+    int kbps = e->override_kbps >= 0 ? e->override_kbps : config_client_kbps();
+    if (kbps <= 0) {                         // 0 = uncapped
+        taskEXIT_CRITICAL(&s_mux);
+        return true;
     }
+    int64_t bps = (int64_t)kbps * 125;       // kbit/s → bytes/s
+    int64_t burst = bps;                     // 1 second of credit
     int64_t elapsed = now - e->last_us[dir];
     if (elapsed > 0) {
         e->tokens[dir] += elapsed * bps / 1000000;
@@ -54,4 +65,12 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
     else                         admit = false;
     taskEXIT_CRITICAL(&s_mux);
     return admit;
+}
+
+void shaper_set_override(uint32_t ip_nbo, int kbps) {
+    int64_t now = esp_timer_get_time();
+    taskENTER_CRITICAL(&s_mux);
+    entry_t *e = find_or_make(ip_nbo, now);
+    e->override_kbps = kbps;
+    taskEXIT_CRITICAL(&s_mux);
 }

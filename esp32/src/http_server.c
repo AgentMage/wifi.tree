@@ -3,6 +3,7 @@
 #include "client_state.h"
 #include "config.h"
 #include "authz.h"
+#include "shaper.h"
 #include "html.h"
 #include <string.h>
 #include <stdlib.h>
@@ -311,8 +312,9 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
 
     // Heap-allocate the large buffers — too big for the httpd task stack.
+    const int BODY_SZ = 12288;
     client_t *list = malloc(sizeof(client_t) * 16);
-    char *body = malloc(4096);
+    char *body = malloc(BODY_SZ);
     if (!list || !body) {
         free(list); free(body);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
@@ -320,7 +322,6 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     }
     int n = clients_snapshot(list, 16);
 
-    const int BODY_SZ = 4096;
     int o = snprintf(body, BODY_SZ,
         "<div class='card'>"
         "<p class='headline' style='color:#9fe89f'>Admin &#x1F510;</p>"
@@ -342,7 +343,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         wifi_has_uplink() ? "connected" : "connecting…",
         clients_count(), ttl / 60, config_client_kbps());
 
-    for (int i = 0; i < n && o < BODY_SZ - 400; i++) {
+    for (int i = 0; i < n && o < BODY_SZ - 800; i++) {
         char nm[128], hn[128];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
         html_escape(hn, sizeof(hn), list[i].hostname);
@@ -354,9 +355,28 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
 
         o += snprintf(body + o, BODY_SZ - o,
+            "<div style='border-top:1px solid #1f3d29;padding:10px 0'>"
             "<p class='sub' style='margin:0 0 8px'>&#x1F33F; <strong>%s</strong>"
             "%s%s <span style='opacity:.6'>&middot; %s</span></p>",
             nm, hn[0] ? " &middot; " : "", hn, status);
+
+        if (list[i].ip) {  // controls need a known IP to target
+            unsigned long ip = (unsigned long)list[i].ip;
+            o += snprintf(body + o, BODY_SZ - o,
+                "<div style='display:flex;gap:6px'>"
+                "<form method='POST' action='/admin/userspeed' "
+                "style='display:flex;gap:6px;margin:0;flex:1'>"
+                "<input type='hidden' name='ip' value='%lu'>"
+                "<input type='number' name='kbps' min='0' placeholder='kbps' "
+                "style='margin:0;flex:1'>"
+                "<button style='margin:0;padding:10px 12px'>Set</button></form>"
+                "<form method='POST' action='/admin/kick' style='margin:0'>"
+                "<input type='hidden' name='ip' value='%lu'>"
+                "<button style='margin:0;padding:10px 14px;background:#aa3333'>Kick</button>"
+                "</form></div>",
+                ip, ip);
+        }
+        o += snprintf(body + o, BODY_SZ - o, "</div>");
     }
     if (n == 0)
         o += snprintf(body + o, BODY_SZ - o,
@@ -444,6 +464,37 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     return redirect_to(req, "/admin", NULL);
 }
 
+// Cut a single visitor off: revoke their internet grant and clear their leaf.
+static esp_err_t admin_kick_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char ips[16] = {0};
+    get_field(rbody, "ip", ips, sizeof(ips));
+    uint32_t ip = (uint32_t)strtoul(ips, NULL, 10);
+    if (ip) {
+        authz_revoke(ip);
+        clients_clear_leaf_by_ip(ip);
+        ESP_LOGI(TAG, "admin kicked %lu", (unsigned long)ip);
+    }
+    return redirect_to(req, "/admin", NULL);
+}
+
+// Override one visitor's bandwidth cap (kbps; 0 = uncapped).
+static esp_err_t admin_userspeed_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char ips[16] = {0}, kb[16] = {0};
+    get_field(rbody, "ip",   ips, sizeof(ips));
+    get_field(rbody, "kbps", kb,  sizeof(kb));
+    uint32_t ip = (uint32_t)strtoul(ips, NULL, 10);
+    if (ip && kb[0]) shaper_set_override(ip, atoi(kb));
+    return redirect_to(req, "/admin", NULL);
+}
+
 static esp_err_t admin_logout_handler(httpd_req_t *req) {
     char tok[33];
     if (admin_cookie(req, tok))
@@ -495,6 +546,8 @@ void http_server_start_portal(void) {
         { .uri = "/admin/setpw",    .method = HTTP_POST, .handler = admin_setpw_handler },
         { .uri = "/admin/login",    .method = HTTP_POST, .handler = admin_login_handler },
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },
+        { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
+        { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
         { .uri = "/admin/logout",   .method = HTTP_POST, .handler = admin_logout_handler },
     };
     for (int i = 0; i < (int)(sizeof(admin) / sizeof(admin[0])); i++)

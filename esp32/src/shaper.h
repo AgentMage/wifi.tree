@@ -11,3 +11,7 @@ void shaper_init(void);
 // (network byte order). dir: 0 = download (to client), 1 = upload (from client).
 // Returns true to forward, false to drop. Rate comes from config (0 = uncapped).
 bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir);
+
+// Override the per-client rate for one IP (kbit/s; 0 = uncapped, -1 = clear
+// override and use the global default).
+void shaper_set_override(uint32_t ip_nbo, int kbps);

@@ -8,6 +8,7 @@
 
 typedef struct {
     uint8_t  mac[6];
+    uint32_t ip;             // last-seen IP (network byte order), 0 if unknown
     char     name[41];       // visitor's chosen name (raw, escape on render)
     char     hostname[33];   // DHCP-reported hostname, "" if unknown
     int64_t  first_seen_us;  // esp_timer_get_time() at first sighting
@@ -40,3 +41,7 @@ int clients_count(void);
 
 // Copy up to max used table entries into out. Returns the number copied.
 int clients_snapshot(client_t *out, int max);
+
+// Clear the leaf of whichever client currently holds this IP (network byte
+// order), so they revert to the new-visitor flow. No-op if not found.
+void clients_clear_leaf_by_ip(uint32_t ip_nbo);
