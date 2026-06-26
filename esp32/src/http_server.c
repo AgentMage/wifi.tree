@@ -341,18 +341,51 @@ static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) 
     if (h > 0) snprintf(fresh, sizeof(fresh), "%dh %dm", h, m);
     else       snprintf(fresh, sizeof(fresh), "%dm", m);
 
-    char body[1024];
+    // The visitor's own lifetime budgets: effective cap = override (>=0) else
+    // global; 0/none = unlimited (show usage text only, no bar).
+    unsigned used_min = c->total_connected_s / 60;
+    int gtcap = config_connected_cap_seconds();
+    int eff_tmin = c->tcap_override >= 0 ? c->tcap_override / 60 : (gtcap > 0 ? gtcap / 60 : 0);
+    uint32_t mb = (uint32_t)(c->total_bytes >> 20);
+    uint32_t tenths = (uint32_t)(((c->total_bytes & 0xFFFFF) * 10) >> 20);
+    uint32_t used_tenths = (uint32_t)((c->total_bytes * 10) >> 20);
+    int gdcap = config_data_cap_mb();
+    int eff_dmb = c->dcap_override >= 0 ? c->dcap_override : (gdcap > 0 ? gdcap : 0);
+
+    char ttxt[48], dtxt[48], tbar[280] = "", dbar[280] = "";
+    if (eff_tmin > 0) {
+        int pct = (int)(used_min * 100 / (unsigned)eff_tmin); if (pct > 100) pct = 100;
+        const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+        snprintf(ttxt, sizeof(ttxt), "%u / %d min", used_min, eff_tmin);
+        snprintf(tbar, sizeof(tbar), "<div class='ubar'><div style='width:%d%%;background:%s'></div></div>", pct, col);
+    } else snprintf(ttxt, sizeof(ttxt), "%u min", used_min);
+    if (eff_dmb > 0) {
+        int pct = (int)(used_tenths * 10 / (uint32_t)eff_dmb); if (pct > 100) pct = 100;
+        const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+        snprintf(dtxt, sizeof(dtxt), "%lu.%lu / %d MB", (unsigned long)mb, (unsigned long)tenths, eff_dmb);
+        snprintf(dbar, sizeof(dbar), "<div class='ubar'><div style='width:%d%%;background:%s'></div></div>", pct, col);
+    } else snprintf(dtxt, sizeof(dtxt), "%lu.%lu MB", (unsigned long)mb, (unsigned long)tenths);
+
+    char body[1800];
     int len = snprintf(body, sizeof(body),
         "<div class='card ok'>"
         "<p class='headline'>Your leaf is still fresh, %s &#x1F33F;</p>"
         "<p class='sub'>You're online. About <strong>%s</strong> of freshness left.</p>"
         "%s%s%s"
         "</div>"
+        "<div class='card'>"
+        "<p class='sub' style='display:flex;justify-content:space-between;margin:0'>"
+        "<span>&#x23F1;&#xFE0F; Connected time</span><strong>%s</strong></p>%s"
+        "<p class='sub' style='display:flex;justify-content:space-between;margin:0'>"
+        "<span>&#x1F4CA; Data used</span><strong>%s</strong></p>%s"
+        "</div>"
         "<a class='btnlink' href='http://wifi.tree'>Keep browsing &rarr;</a>",
         safe_name, fresh,
         safe_host[0] ? "<p class='sub' style='opacity:.6'>device: " : "",
         safe_host[0] ? safe_host : "",
-        safe_host[0] ? "</p>" : "");
+        safe_host[0] ? "</p>" : "",
+        ttxt, tbar, dtxt, dbar);
+    if (len >= (int)sizeof(body)) len = sizeof(body) - 1;
 
     send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);

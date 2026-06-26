@@ -90,7 +90,10 @@ static const char SAVING_HTML[] =
     "0%{transform:scale(0) rotate(-45deg);opacity:0}" \
     "60%{transform:scale(1.18) rotate(10deg);opacity:1}" \
     "100%{transform:scale(1) rotate(0);opacity:1}}" \
-  "@keyframes leafsway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}"
+  "@keyframes leafsway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}" \
+  ".ubar{height:8px;background:#0b1a0f;border:1px solid #1f3d29;border-radius:99px;" \
+    "overflow:hidden;margin:5px 0 12px}" \
+  ".ubar>div{height:100%;border-radius:99px;min-width:2px}"
 
 // Sendable form of PORTAL_CSS (so dynamic portal pages can chunk it out).
 static const char PORTAL_CSS_STR[] = PORTAL_CSS;
