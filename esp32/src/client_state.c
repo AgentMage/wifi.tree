@@ -51,8 +51,10 @@ void clients_init(void) {
     // Restore persisted records (identity + lifetime); ephemeral fields stay 0.
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
-    uint8_t buf[sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t)];
-    size_t len = sizeof(buf);
+    const size_t bufsz = sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t);
+    uint8_t *buf = malloc(bufsz);
+    if (!buf) { nvs_close(h); return; }
+    size_t len = bufsz;
     if (nvs_get_blob(h, NVS_KEY, buf, &len) == ESP_OK && len >= sizeof(persist_hdr_t)) {
         persist_hdr_t hdr;
         memcpy(&hdr, buf, sizeof(hdr));
@@ -79,15 +81,21 @@ void clients_init(void) {
                      hdr.version, PERSIST_VER);
         }
     }
+    free(buf);
     nvs_close(h);
 }
 
 void clients_flush(void) {
     if (!s_dirty) return;
 
+    // Heap-allocate the blob (~1.5 KB) — too big for the small accounting-task
+    // stack, especially on top of the NVS write that follows.
+    const size_t bufsz = sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t);
+    uint8_t *buf = malloc(bufsz);
+    if (!buf) { s_dirty = true; return; }   // retry next tick
+
     // Build the blob under the lock, then write outside it so the (slowish) NVS
     // commit doesn't block other client-table access.
-    uint8_t buf[sizeof(persist_hdr_t) + MAX_CLIENTS * sizeof(persist_rec_t)];
     uint16_t n = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -111,6 +119,7 @@ void clients_flush(void) {
 
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
+        free(buf);
         s_dirty = true;   // retry on the next tick
         return;
     }
@@ -120,6 +129,7 @@ void clients_flush(void) {
     else
         s_dirty = true;
     nvs_close(h);
+    free(buf);
 }
 
 // Find the table slot for a MAC, allocating (or evicting the oldest) as needed.

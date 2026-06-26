@@ -35,5 +35,7 @@ static void accounting_task(void *arg) {
 }
 
 void accounting_start(void) {
-    xTaskCreate(accounting_task, "accounting", 3072, NULL, 2, NULL);
+    // 5 KB stack: the periodic clients_flush() does an NVS/flash write, which
+    // needs comfortable headroom beyond the default.
+    xTaskCreate(accounting_task, "accounting", 5120, NULL, 2, NULL);
 }

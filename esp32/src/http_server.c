@@ -283,6 +283,7 @@ static esp_err_t send_portal_head(httpd_req_t *req) {
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>%s</title><style>", title);
+    if (n >= (int)sizeof(pre)) n = sizeof(pre) - 1;
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send_chunk(req, pre, n);
     httpd_resp_send_chunk(req, PORTAL_CSS_STR, sizeof(PORTAL_CSS_STR) - 1);
@@ -292,6 +293,7 @@ static esp_err_t send_portal_head(httpd_req_t *req) {
         "button,a.btnlink{background:%s}</style></head><body><div class='wrap'>"
         "<div class='logo'>%s</div><h1>%s</h1><p class='tag'>%s</p>",
         accent, emoji, title, tag);
+    if (n >= (int)sizeof(post)) n = sizeof(post) - 1;
     httpd_resp_send_chunk(req, post, n);
 
     const char *banner = portalcfg_get("banner");
@@ -301,6 +303,7 @@ static esp_err_t send_portal_head(httpd_req_t *req) {
         n = snprintf(bbuf, sizeof(bbuf),
             "<div class='card' style='border-color:#b8860b;background:#2a2410;"
             "color:#ffe9a8;white-space:pre-wrap'>%s</div>", be);
+        if (n >= (int)sizeof(bbuf)) n = sizeof(bbuf) - 1;
         httpd_resp_send_chunk(req, bbuf, n);
     }
     return ESP_OK;
@@ -311,6 +314,7 @@ static esp_err_t send_portal_foot(httpd_req_t *req) {
     char fe[640], buf[760];
     escape_br(fe, sizeof(fe), portalcfg_get("footer"));
     int n = snprintf(buf, sizeof(buf), "<p class='foot'>%s</p></div></body></html>", fe);
+    if (n >= (int)sizeof(buf)) n = sizeof(buf) - 1;
     httpd_resp_send_chunk(req, buf, n);
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
@@ -371,11 +375,19 @@ static esp_err_t send_over_budget_card(httpd_req_t *req, client_t *c) {
 
 static esp_err_t portal_get_handler(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
-    client_t *c = clients_find_by_ip(client_ip(req));
+    uint32_t ip = client_ip(req);
+    client_t *c = clients_find_by_ip(ip);
     if (c && c->banned)
         return send_over_budget_card(req, c);
-    if (client_leaf_active(c, ttl))
+    if (client_leaf_active(c, ttl)) {
+        // Re-open the gate for this IP — covers a reconnect that got a new DHCP
+        // lease (leaf is keyed by MAC, but the internet grant is keyed by IP).
+        if (ip) {
+            int64_t expiry = ttl <= 0 ? 0 : c->leaf_grown_us + (int64_t)ttl * 1000000;
+            authz_grant(ip, expiry);
+        }
         return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
+    }
 
     // New visitor, or leaf expired — show the customizable grow-a-leaf welcome.
     char whead[200], wtext[700], accent[10];
@@ -395,6 +407,7 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
         "<button type='submit'>Grow a Leaf &#x1F33F;</button>"
         "</form></div>",
         accent, whead, wtext);
+    if (len >= (int)sizeof(body)) len = sizeof(body) - 1;
 
     send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);
