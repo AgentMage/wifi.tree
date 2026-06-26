@@ -648,16 +648,10 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             nm, pill, status,
             hn[0] ? hn : "", hn[0] ? " &middot; " : "", ipstr, macfmt, ago);
 
-        // Not yet registered: no leaf, no usage, no name — only a Forget action.
+        // Not yet registered: no leaf, no usage, no name, and not persisted —
+        // purely informational ("someone's on the AP but hasn't registered").
         if (g == 2) {
-            o += snprintf(body + o, BODY_SZ - o,
-                "<div class='mactions'>"
-                "<form method='POST' action='/admin/forget' "
-                "onsubmit='return confirm(\"Forget this visitor entirely?\")'>"
-                "<input type='hidden' name='mac' value='%s'>"
-                "<button class='danger'>Forget</button></form>"
-                "</div></div>",
-                machex);
+            o += snprintf(body + o, BODY_SZ - o, "</div>");  // close the card, no actions
             continue;
         }
 

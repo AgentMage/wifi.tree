@@ -104,6 +104,7 @@ void clients_flush(void) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (!s_clients[i].used) continue;
+        if (!s_clients[i].name[0]) continue;   // only registered visitors persist
         persist_rec_t r = {0};
         memcpy(r.mac, s_clients[i].mac, 6);
         strlcpy(r.name, s_clients[i].name, sizeof(r.name));
