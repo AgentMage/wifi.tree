@@ -15,7 +15,7 @@
 #define NVS_NS  "users"
 #define NVS_KEY "table"
 #define TAG     "clients"
-#define PERSIST_VER 3          // bump when persist_rec_t layout changes
+#define PERSIST_VER 4          // bump when persist_rec_t layout changes
 
 static client_t          s_clients[MAX_CLIENTS];
 static SemaphoreHandle_t s_lock;
@@ -30,6 +30,8 @@ typedef struct __attribute__((packed)) {
     uint64_t total_bytes;
     uint8_t  banned;
     int32_t  bw_cap_kbps;       // per-user speed cap: -1 = global default, 0 = uncapped
+    int32_t  tcap_override;     // per-user time budget: -1 global, 0 unlimited, >0 sec
+    int32_t  dcap_override;     // per-user data budget: -1 global, 0 unlimited, >0 MB
 } persist_rec_t;
 
 // Blob layout: [persist_hdr_t][persist_rec_t × count]. The version lets a
@@ -72,6 +74,8 @@ void clients_init(void) {
                 c->total_bytes = r.total_bytes;
                 c->banned = r.banned;
                 c->bw_cap_kbps = r.bw_cap_kbps;
+                c->tcap_override = r.tcap_override;
+                c->dcap_override = r.dcap_override;
                 c->first_seen_us = esp_timer_get_time();
                 c->used = true;
             }
@@ -108,6 +112,8 @@ void clients_flush(void) {
         r.total_bytes = s_clients[i].total_bytes;
         r.banned = s_clients[i].banned;
         r.bw_cap_kbps = s_clients[i].bw_cap_kbps;
+        r.tcap_override = s_clients[i].tcap_override;
+        r.dcap_override = s_clients[i].dcap_override;
         memcpy(buf + sizeof(persist_hdr_t) + n * sizeof(r), &r, sizeof(r));
         n++;
     }
@@ -143,8 +149,10 @@ static client_t *get_or_create(const uint8_t mac[6]) {
             memset(c, 0, sizeof(*c));
             memcpy(c->mac, mac, 6);
             c->used = true;
-            c->bw_cap_kbps = -1;        // use global default until set
-            c->first_seen_us = esp_timer_get_time();
+            c->bw_cap_kbps = -1;        // all per-user overrides default to "use global"
+            c->tcap_override = -1;
+            c->dcap_override = -1;
+            c->first_seen_us = c->last_seen_us = esp_timer_get_time();
             mark_dirty();
             return c;
         }
@@ -155,7 +163,9 @@ static client_t *get_or_create(const uint8_t mac[6]) {
     memcpy(oldest->mac, mac, 6);
     oldest->used = true;
     oldest->bw_cap_kbps = -1;
-    oldest->first_seen_us = esp_timer_get_time();
+    oldest->tcap_override = -1;
+    oldest->dcap_override = -1;
+    oldest->first_seen_us = oldest->last_seen_us = esp_timer_get_time();
     mark_dirty();
     return oldest;
 }
@@ -167,6 +177,7 @@ static void on_ip_assigned(void *arg, esp_event_base_t base,
     xSemaphoreTake(s_lock, portMAX_DELAY);
     client_t *c = get_or_create(e->mac);
     c->ip = e->ip.addr;
+    c->last_seen_us = esp_timer_get_time();
     if (e->hostname[0] && strcmp(c->hostname, e->hostname) != 0) {
         strlcpy(c->hostname, e->hostname, sizeof(c->hostname));
         mark_dirty();   // hostname is persistent
@@ -203,6 +214,7 @@ client_t *clients_find_by_ip(uint32_t ip_nbo) {
             xSemaphoreTake(s_lock, portMAX_DELAY);
             client_t *c = get_or_create(pairs[i].mac);
             c->ip = ip_nbo;
+            c->last_seen_us = esp_timer_get_time();
             xSemaphoreGive(s_lock);
             return c;
         }
@@ -214,7 +226,7 @@ void clients_grow_leaf(client_t *c, const char *name) {
     if (!c) return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     strlcpy(c->name, name, sizeof(c->name));
-    c->leaf_grown_us = esp_timer_get_time();
+    c->leaf_grown_us = c->last_seen_us = esp_timer_get_time();
     mark_dirty();   // name is persistent
     xSemaphoreGive(s_lock);
     clients_flush();   // registration is discrete & rare — persist it now
@@ -326,6 +338,44 @@ uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps) {
     return ip;
 }
 
+void clients_set_time_cap_by_mac(const uint8_t mac[6], int seconds) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            s_clients[i].tcap_override = seconds;
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+}
+
+void clients_set_data_cap_by_mac(const uint8_t mac[6], int mb) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            s_clients[i].dcap_override = mb;
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+}
+
+void clients_set_exempt_by_mac(const uint8_t mac[6], bool exempt) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
+            s_clients[i].tcap_override = exempt ? 0 : -1;  // 0 = unlimited, -1 = use global
+            s_clients[i].dcap_override = exempt ? 0 : -1;
+            if (exempt) s_clients[i].banned = false;       // exempt lifts any cutoff
+            mark_dirty();
+            break;
+        }
+    }
+    xSemaphoreGive(s_lock);
+}
+
 void clients_reset_budget_by_mac(const uint8_t mac[6]) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -357,13 +407,18 @@ void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
         }
         if (c->banned) continue;
 
+        // Effective caps: per-visitor override (>=0) wins over the global; 0 = unlimited.
+        int      eff_t = c->tcap_override >= 0 ? c->tcap_override : cap_s;
+        uint64_t eff_d = c->dcap_override >= 0 ? ((uint64_t)c->dcap_override << 20)
+                                               : data_cap_bytes;
+
         bool over = false;
         if (client_leaf_active(c, ttl_s)) {            // only online users accrue time
             c->total_connected_s += elapsed_s;
             mark_dirty();
-            if (cap_s > 0 && c->total_connected_s >= (uint32_t)cap_s) over = true;
+            if (eff_t > 0 && c->total_connected_s >= (uint32_t)eff_t) over = true;
         }
-        if (data_cap_bytes > 0 && c->total_bytes >= data_cap_bytes) over = true;
+        if (eff_d > 0 && c->total_bytes >= eff_d) over = true;
 
         if (over) {
             c->banned = true;

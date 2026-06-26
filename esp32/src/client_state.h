@@ -16,9 +16,12 @@ typedef struct {
     uint64_t total_bytes;       // lifetime forwarded bytes up+down (data budget)
     bool     banned;            // true => cut off (over budget or kicked-for-good)
     int32_t  bw_cap_kbps;       // per-user speed cap; -1 = global default, 0 = uncapped
+    int32_t  tcap_override;     // per-user time budget; -1 = global, 0 = unlimited, >0 seconds
+    int32_t  dcap_override;     // per-user data budget; -1 = global, 0 = unlimited, >0 MB
     // ── Ephemeral (RAM only, zeroed on boot) ──
     uint32_t ip;             // last-seen IP (network byte order), 0 if unknown
     int64_t  first_seen_us;  // esp_timer_get_time() at first sighting
+    int64_t  last_seen_us;   // esp_timer_get_time() of the most recent sighting
     int64_t  leaf_grown_us;  // when the current leaf was grown, 0 = never
     bool     used;
 } client_t;
@@ -80,6 +83,15 @@ void clients_clear_leaf_by_ip(uint32_t ip_nbo);
 // shaper for immediate effect. Marks the table dirty. No-op (returns 0) if the
 // MAC isn't in the table.
 uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps);
+
+// Set a visitor's per-user time budget (seconds; -1 = use global, 0 = unlimited)
+// or data budget (MB; same convention), keyed by MAC. Marks the table dirty.
+void clients_set_time_cap_by_mac(const uint8_t mac[6], int seconds);
+void clients_set_data_cap_by_mac(const uint8_t mac[6], int mb);
+
+// Exempt (or un-exempt) a visitor: exempt sets both budget overrides to
+// "unlimited" and lifts any ban; un-exempt reverts them to the global default.
+void clients_set_exempt_by_mac(const uint8_t mac[6], bool exempt);
 
 // Rename a visitor (keyed by MAC). Marks the table dirty. No-op if not found.
 void clients_set_name_by_mac(const uint8_t mac[6], const char *name);

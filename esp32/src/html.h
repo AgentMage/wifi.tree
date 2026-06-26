@@ -153,6 +153,8 @@ static const char PORTAL_CSS_STR[] = PORTAL_CSS;
   ".vhead{display:flex;justify-content:space-between;align-items:center;gap:8px}" \
   ".vname{font-weight:700;font-size:1.05em}" \
   ".vmeta{opacity:.55;font-size:.82em;margin:3px 0 8px}" \
+  ".bcell{display:flex;align-items:center;gap:8px;font-size:.82em;margin:4px 0;opacity:.92}" \
+  ".bcell .bnum{opacity:.85;white-space:nowrap}" \
   ".chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}" \
   ".chip{background:#0b1a0f;border:1px solid #1f3d29;border-radius:99px;padding:3px 10px;" \
     "font-size:.78em;opacity:.9;white-space:nowrap}" \

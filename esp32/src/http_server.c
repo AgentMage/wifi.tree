@@ -133,6 +133,16 @@ static bool hex_to_mac(const char *s, uint8_t mac[6]) {
     return true;
 }
 
+// Human "X ago" for an esp_timer timestamp (RAM-only; "&mdash;" if never seen).
+static void fmt_ago(char *out, size_t sz, int64_t when_us) {
+    if (when_us <= 0) { strlcpy(out, "&mdash;", sz); return; }
+    int s = (int)((esp_timer_get_time() - when_us) / 1000000);
+    if (s < 0) s = 0;
+    if (s < 60)        snprintf(out, sz, "%ds ago", s);
+    else if (s < 3600) snprintf(out, sz, "%dm ago", s / 60);
+    else               snprintf(out, sz, "%dh ago", s / 3600);
+}
+
 // Escapes a string for embedding inside a JSON double-quoted value. Leaves
 // HTML metachars raw (the browser HTML-escapes on render); handles ", \, control.
 static void json_escape(char *dst, size_t dstsz, const char *src) {
@@ -517,7 +527,7 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
     int ttl = config_leaf_ttl_seconds();
 
     // Heap-allocate the large buffers — too big for the httpd task stack.
-    const int BODY_SZ = 20480;
+    const int BODY_SZ = 36864;
     client_t *list = malloc(sizeof(client_t) * 16);
     char *body = malloc(BODY_SZ);
     if (!list || !body) {
@@ -549,67 +559,86 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<h2>Visitors</h2>",
         clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
-    for (int i = 0; i < n && o < BODY_SZ - 1600; i++) {
-        char nm[128], rawnm[128], hn[128], machex[13];
-        html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
-        html_escape(rawnm, sizeof(rawnm), list[i].name);   // for the rename input
-        html_escape(hn, sizeof(hn), list[i].hostname);
-        mac_to_hex(machex, list[i].mac);
-        int left = client_leaf_seconds_left(&list[i], ttl);
+    for (int i = 0; i < n && o < BODY_SZ - 2400; i++) {
+        client_t *u = &list[i];
+        char nm[128], rawnm[128], hn[128], machex[13], macfmt[20], ago[24];
+        html_escape(nm, sizeof(nm), u->name[0] ? u->name : "(no name yet)");
+        html_escape(rawnm, sizeof(rawnm), u->name);   // for the rename input
+        html_escape(hn, sizeof(hn), u->hostname);
+        mac_to_hex(machex, u->mac);
+        snprintf(macfmt, sizeof(macfmt), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 u->mac[0], u->mac[1], u->mac[2], u->mac[3], u->mac[4], u->mac[5]);
+        fmt_ago(ago, sizeof(ago), u->last_seen_us);
+        int left = client_leaf_seconds_left(u, ttl);
+        bool exempt = (u->tcap_override == 0 && u->dcap_override == 0);
 
         // Status pill: bad=over budget, warn=no/expired leaf, ok=fresh/active.
         const char *pill = "ok";
         char status[48];
-        if (list[i].banned)       { pill = "bad";  snprintf(status, sizeof(status), "over budget"); }
-        else if (list[i].leaf_grown_us == 0)        { pill = "warn"; snprintf(status, sizeof(status), "no leaf"); }
-        else if (!client_leaf_active(&list[i], ttl)){ pill = "warn"; snprintf(status, sizeof(status), "expired"); }
+        if (u->banned)            { pill = "bad";  snprintf(status, sizeof(status), "over budget"); }
+        else if (u->leaf_grown_us == 0)        { pill = "warn"; snprintf(status, sizeof(status), "no leaf"); }
+        else if (!client_leaf_active(u, ttl))  { pill = "warn"; snprintf(status, sizeof(status), "expired"); }
         else if (ttl <= 0)        { snprintf(status, sizeof(status), "fresh"); }
         else snprintf(status, sizeof(status), "%dh %dm left", left / 3600, (left % 3600) / 60);
 
         char ipstr[20];
-        if (list[i].ip) {
-            const uint8_t *b = (const uint8_t *)&list[i].ip;
+        if (u->ip) {
+            const uint8_t *b = (const uint8_t *)&u->ip;
             snprintf(ipstr, sizeof(ipstr), "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
         } else snprintf(ipstr, sizeof(ipstr), "offline");
 
-        char budget[40];
-        unsigned used_min = list[i].total_connected_s / 60;
-        if (cap > 0) snprintf(budget, sizeof(budget), "%u / %d min", used_min, cap / 60);
-        else         snprintf(budget, sizeof(budget), "%u min", used_min);
+        // Effective budgets: per-visitor override (>=0) wins, else global; 0 = unlimited.
+        unsigned used_min = u->total_connected_s / 60;
+        int eff_tmin = u->tcap_override >= 0 ? u->tcap_override / 60 : (cap > 0 ? cap / 60 : 0);
+        uint32_t mb = (uint32_t)(u->total_bytes >> 20);
+        uint32_t tenths = (uint32_t)(((u->total_bytes & 0xFFFFF) * 10) >> 20);
+        uint32_t used_tenths = (uint32_t)((u->total_bytes * 10) >> 20);
+        int eff_dmb = u->dcap_override >= 0 ? u->dcap_override : (dcap > 0 ? dcap : 0);
 
-        // Lifetime data as "X.Y MB" (integer math — no float printf on this build).
-        char data[40];
-        uint32_t mb = (uint32_t)(list[i].total_bytes >> 20);
-        uint32_t tenths = (uint32_t)(((list[i].total_bytes & 0xFFFFF) * 10) >> 20);
-        if (dcap > 0) snprintf(data, sizeof(data), "%lu.%lu / %d MB",
-                               (unsigned long)mb, (unsigned long)tenths, dcap);
-        else          snprintf(data, sizeof(data), "%lu.%lu MB",
-                               (unsigned long)mb, (unsigned long)tenths);
+        // Build optional progress bars (only when a finite cap applies).
+        char tbar[170] = "", dbar[170] = "", ttxt[48], dtxt[48];
+        if (eff_tmin > 0) {
+            int pct = (int)(used_min * 100 / (unsigned)eff_tmin); if (pct > 100) pct = 100;
+            const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+            snprintf(tbar, sizeof(tbar),
+                "<span class='bar'><span class='f' style='width:%d%%;background:%s'></span></span>", pct, col);
+            snprintf(ttxt, sizeof(ttxt), "%u/%d min", used_min, eff_tmin);
+        } else snprintf(ttxt, sizeof(ttxt), "%u min", used_min);
+        if (eff_dmb > 0) {
+            int pct = (int)(used_tenths * 10 / (uint32_t)eff_dmb); if (pct > 100) pct = 100;
+            const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+            snprintf(dbar, sizeof(dbar),
+                "<span class='bar'><span class='f' style='width:%d%%;background:%s'></span></span>", pct, col);
+            snprintf(dtxt, sizeof(dtxt), "%lu.%lu/%d MB", (unsigned long)mb, (unsigned long)tenths, eff_dmb);
+        } else snprintf(dtxt, sizeof(dtxt), "%lu.%lu MB", (unsigned long)mb, (unsigned long)tenths);
 
-        // Per-user speed cap: -1 = global default, 0 = uncapped, else kbps.
-        char capstr[20], capval[12];
-        if (list[i].bw_cap_kbps < 0)       { snprintf(capstr, sizeof(capstr), "default"); capval[0] = '\0'; }
-        else if (list[i].bw_cap_kbps == 0) { snprintf(capstr, sizeof(capstr), "uncapped"); snprintf(capval, sizeof(capval), "0"); }
-        else { snprintf(capstr, sizeof(capstr), "%d kbps", (int)list[i].bw_cap_kbps);
-               snprintf(capval, sizeof(capval), "%d", (int)list[i].bw_cap_kbps); }
+        // Per-user override prefills (blank = use global default).
+        char capval[12], tval[12], dval[12], capstr[20];
+        if (u->bw_cap_kbps < 0)       { capval[0] = '\0'; snprintf(capstr, sizeof(capstr), "default"); }
+        else if (u->bw_cap_kbps == 0) { snprintf(capval, sizeof(capval), "0"); snprintf(capstr, sizeof(capstr), "uncapped"); }
+        else { snprintf(capval, sizeof(capval), "%d", (int)u->bw_cap_kbps);
+               snprintf(capstr, sizeof(capstr), "%d kbps", (int)u->bw_cap_kbps); }
+        if (u->tcap_override < 0) tval[0] = '\0'; else snprintf(tval, sizeof(tval), "%d", (int)u->tcap_override / 60);
+        if (u->dcap_override < 0) dval[0] = '\0'; else snprintf(dval, sizeof(dval), "%d", (int)u->dcap_override);
 
-        // Card: name + status, meta (host/ip), read-only usage chips.
+        // Card head: name + status, two meta lines, usage bars + speed chip.
         o += snprintf(body + o, BODY_SZ - o,
             "<div class='card2'>"
             "<div class='vhead'><span class='vname'>&#x1F33F; %s</span>"
             "<span class='pill %s'>%s</span></div>"
             "<div class='vmeta'>%s%s%s</div>"
-            "<div class='chips'>"
-            "<span class='chip'>&#x23F1;&#xFE0F; %s</span>"
-            "<span class='chip'>&#x1F4CA; %s</span>"
-            "<span class='chip'>&#x1F6A6; %s</span>"
-            "</div>"
+            "<div class='vmeta' style='margin-top:-4px'>%s &middot; seen %s</div>"
+            "<div class='bcell'>&#x23F1;&#xFE0F; %s<span class='bnum'>%s</span></div>"
+            "<div class='bcell'>&#x1F4CA; %s<span class='bnum'>%s</span></div>"
+            "<div class='bcell'>&#x1F6A6; <span class='bnum'>%s</span>%s</div>"
             "<details class='manage'><summary>Manage</summary>",
             nm, pill, status,
             hn[0] ? hn : "", hn[0] ? " &middot; " : "", ipstr,
-            budget, data, capstr);
+            macfmt, ago,
+            tbar, ttxt, dbar, dtxt, capstr,
+            exempt ? " <span class='pill ok'>exempt</span>" : "");
 
-        // Rename + speed rows (MAC-keyed, persist, work offline).
+        // Manage: rename, speed, time, data overrides.
         o += snprintf(body + o, BODY_SZ - o,
             "<div class='mrow'><form method='POST' action='/admin/rename'>"
             "<input type='hidden' name='mac' value='%s'><label>Name</label>"
@@ -619,19 +648,38 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             "<input type='hidden' name='mac' value='%s'><label>Speed</label>"
             "<input type='number' name='kbps' min='0' value='%s' placeholder='default'>"
             "<span class='muted'>kbps</span><button class='sec'>Set</button></form></div>"
+            "<div class='mrow'><form method='POST' action='/admin/usertime'>"
+            "<input type='hidden' name='mac' value='%s'><label>Time</label>"
+            "<input type='number' name='min' min='0' value='%s' placeholder='default'>"
+            "<span class='muted'>min</span><button class='sec'>Set</button></form></div>"
+            "<div class='mrow'><form method='POST' action='/admin/userdata'>"
+            "<input type='hidden' name='mac' value='%s'><label>Data</label>"
+            "<input type='number' name='mb' min='0' value='%s' placeholder='default'>"
+            "<span class='muted'>MB</span><button class='sec'>Set</button></form></div>"
+            "<p class='muted' style='font-size:.78em;margin:4px 0 0'>"
+            "Blank = use the global default &middot; 0 = unlimited.</p>",
+            machex, rawnm, machex, capval, machex, tval, machex, dval);
+
+        // Manage actions: exempt toggle, reset, kick, forget.
+        o += snprintf(body + o, BODY_SZ - o,
             "<div class='mactions'>"
+            "<form method='POST' action='/admin/exempt'>"
+            "<input type='hidden' name='mac' value='%s'>"
+            "<input type='hidden' name='on' value='%s'>"
+            "<button class='sec'>%s</button></form>"
             "<form method='POST' action='/admin/resettime'>"
             "<input type='hidden' name='mac' value='%s'>"
             "<button class='sec'>Reset usage</button></form>",
-            machex, rawnm, machex, capval, machex);
+            machex, exempt ? "0" : "1",
+            exempt ? "Un-exempt" : "Exempt (unlimited)", machex);
 
-        if (list[i].ip)   // kick acts on live traffic → needs the IP
+        if (u->ip)   // kick acts on live traffic → needs the IP
             o += snprintf(body + o, BODY_SZ - o,
                 "<form method='POST' action='/admin/kick' "
                 "onsubmit='return confirm(\"Kick this visitor now?\")'>"
                 "<input type='hidden' name='ip' value='%lu'>"
                 "<button class='warn'>Kick</button></form>",
-                (unsigned long)list[i].ip);
+                (unsigned long)u->ip);
 
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/forget' "
@@ -1031,6 +1079,57 @@ static esp_err_t admin_userspeed_handler(httpd_req_t *req) {
     return redirect_to(req, "/admin", NULL);
 }
 
+// Per-visitor time budget override (minutes; blank = global, 0 = unlimited).
+static esp_err_t admin_usertime_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0}, v[16] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    get_field(rbody, "min", v, sizeof(v));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        clients_set_time_cap_by_mac(mac, v[0] ? atoi(v) * 60 : -1);
+        clients_flush();
+    }
+    return redirect_to(req, "/admin", NULL);
+}
+
+// Per-visitor data budget override (MB; blank = global, 0 = unlimited).
+static esp_err_t admin_userdata_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0}, v[16] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    get_field(rbody, "mb", v, sizeof(v));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        clients_set_data_cap_by_mac(mac, v[0] ? atoi(v) : -1);
+        clients_flush();
+    }
+    return redirect_to(req, "/admin", NULL);
+}
+
+// Exempt / un-exempt a visitor (lift all caps, or revert to global defaults).
+static esp_err_t admin_exempt_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[128] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char machex[16] = {0}, on[8] = {0};
+    get_field(rbody, "mac", machex, sizeof(machex));
+    get_field(rbody, "on", on, sizeof(on));
+    uint8_t mac[6];
+    if (hex_to_mac(machex, mac)) {
+        clients_set_exempt_by_mac(mac, on[0] == '1');
+        clients_flush();
+    }
+    return redirect_to(req, "/admin", NULL);
+}
+
 // Render the change-password page, optionally with a status message.
 static esp_err_t send_password_page(httpd_req_t *req, const char *msg, bool err) {
     char body[1000];
@@ -1121,7 +1220,7 @@ void http_server_start_setup(const char *networks_html) {
 void http_server_start_portal(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 24;
+    cfg.max_uri_handlers = 28;
     cfg.stack_size = 8192;   // headroom for admin handlers (default 4096 too tight)
 
     httpd_handle_t server;
@@ -1142,6 +1241,9 @@ void http_server_start_portal(void) {
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },
         { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
         { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
+        { .uri = "/admin/usertime", .method = HTTP_POST, .handler = admin_usertime_handler },
+        { .uri = "/admin/userdata", .method = HTTP_POST, .handler = admin_userdata_handler },
+        { .uri = "/admin/exempt",   .method = HTTP_POST, .handler = admin_exempt_handler },
         { .uri = "/admin/resettime",.method = HTTP_POST, .handler = admin_resettime_handler },
         { .uri = "/admin/rename",   .method = HTTP_POST, .handler = admin_rename_handler },
         { .uri = "/admin/forget",   .method = HTTP_POST, .handler = admin_forget_handler },
