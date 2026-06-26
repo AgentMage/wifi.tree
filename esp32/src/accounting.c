@@ -18,14 +18,15 @@ static void accounting_task(void *arg) {
 
         int ttl = config_leaf_ttl_seconds();
         int cap = config_connected_cap_seconds();
+        uint64_t data_cap = (uint64_t)config_data_cap_mb() << 20;  // MB → bytes
 
         uint32_t banned[16];
         int nb = 0;
-        clients_account_and_enforce(TICK_SECONDS, ttl, cap, banned, 16, &nb);
+        clients_account_and_enforce(TICK_SECONDS, ttl, cap, data_cap, banned, 16, &nb);
 
         for (int i = 0; i < nb; i++) {
             authz_revoke(banned[i]);   // close the internet gate immediately
-            ESP_LOGI(TAG, "visitor %lu hit time budget — cut off",
+            ESP_LOGI(TAG, "visitor %lu hit a usage budget — cut off",
                      (unsigned long)banned[i]);
         }
 

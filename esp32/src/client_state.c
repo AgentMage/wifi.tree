@@ -15,7 +15,7 @@
 #define NVS_NS  "users"
 #define NVS_KEY "table"
 #define TAG     "clients"
-#define PERSIST_VER 2          // bump when persist_rec_t layout changes
+#define PERSIST_VER 3          // bump when persist_rec_t layout changes
 
 static client_t          s_clients[MAX_CLIENTS];
 static SemaphoreHandle_t s_lock;
@@ -27,6 +27,7 @@ typedef struct __attribute__((packed)) {
     char     name[41];
     char     hostname[33];
     uint32_t total_connected_s;
+    uint64_t total_bytes;
     uint8_t  banned;
     int32_t  bw_cap_kbps;       // per-user speed cap: -1 = global default, 0 = uncapped
 } persist_rec_t;
@@ -66,6 +67,7 @@ void clients_init(void) {
                 strlcpy(c->name, r.name, sizeof(c->name));
                 strlcpy(c->hostname, r.hostname, sizeof(c->hostname));
                 c->total_connected_s = r.total_connected_s;
+                c->total_bytes = r.total_bytes;
                 c->banned = r.banned;
                 c->bw_cap_kbps = r.bw_cap_kbps;
                 c->first_seen_us = esp_timer_get_time();
@@ -95,6 +97,7 @@ void clients_flush(void) {
         strlcpy(r.name, s_clients[i].name, sizeof(r.name));
         strlcpy(r.hostname, s_clients[i].hostname, sizeof(r.hostname));
         r.total_connected_s = s_clients[i].total_connected_s;
+        r.total_bytes = s_clients[i].total_bytes;
         r.banned = s_clients[i].banned;
         r.bw_cap_kbps = s_clients[i].bw_cap_kbps;
         memcpy(buf + sizeof(persist_hdr_t) + n * sizeof(r), &r, sizeof(r));
@@ -256,6 +259,7 @@ void clients_reset_budget_by_mac(const uint8_t mac[6]) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (s_clients[i].used && memcmp(s_clients[i].mac, mac, 6) == 0) {
             s_clients[i].total_connected_s = 0;
+            s_clients[i].total_bytes = 0;
             s_clients[i].banned = false;
             mark_dirty();
             break;
@@ -265,16 +269,31 @@ void clients_reset_budget_by_mac(const uint8_t mac[6]) {
 }
 
 void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
+                                 uint64_t data_cap_bytes,
                                  uint32_t *banned_out, int max, int *n_out) {
     int nb = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         client_t *c = &s_clients[i];
-        if (!c->used || c->banned) continue;
-        if (!client_leaf_active(c, ttl_s)) continue;  // only online users accrue
-        c->total_connected_s += elapsed_s;
-        mark_dirty();
-        if (cap_s > 0 && c->total_connected_s >= (uint32_t)cap_s) {
+        if (!c->used) continue;
+
+        // Fold this device's forwarded bytes since the last tick into its
+        // lifetime total (done for everyone, to catch trailing usage).
+        if (c->ip) {
+            uint64_t b = shaper_take_bytes(c->ip);
+            if (b) { c->total_bytes += b; mark_dirty(); }
+        }
+        if (c->banned) continue;
+
+        bool over = false;
+        if (client_leaf_active(c, ttl_s)) {            // only online users accrue time
+            c->total_connected_s += elapsed_s;
+            mark_dirty();
+            if (cap_s > 0 && c->total_connected_s >= (uint32_t)cap_s) over = true;
+        }
+        if (data_cap_bytes > 0 && c->total_bytes >= data_cap_bytes) over = true;
+
+        if (over) {
             c->banned = true;
             c->leaf_grown_us = 0;                      // close their session
             if (nb < max && c->ip) banned_out[nb++] = c->ip;

@@ -264,16 +264,18 @@ static esp_err_t send_over_budget_card(httpd_req_t *req, client_t *c) {
     html_escape(safe_name, sizeof(safe_name), c->name[0] ? c->name : "friend");
 
     unsigned used_min = c->total_connected_s / 60;
+    uint32_t mb = (uint32_t)(c->total_bytes >> 20);
+    uint32_t tenths = (uint32_t)(((c->total_bytes & 0xFFFFF) * 10) >> 20);
     char body[768];
     int len = snprintf(body, sizeof(body),
         "<div class='card'>"
         "<p class='headline' style='color:#d8b24a'>Your leaf has fallen, %s &#x1F342;</p>"
-        "<p class='sub'>You've used your share of connected time"
-        " (<strong>%u min</strong>) at this gathering.</p>"
+        "<p class='sub'>You've used your share at this gathering "
+        "(<strong>%u min</strong> online, <strong>%lu.%lu MB</strong>).</p>"
         "<p class='sub' style='opacity:.7'>Find the host to be let back on if you "
         "need more.</p>"
         "</div>",
-        safe_name, used_min);
+        safe_name, used_min, (unsigned long)mb, (unsigned long)tenths);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send_chunk(req, PORTAL_HEAD, HTTPD_RESP_USE_STRLEN);
@@ -388,18 +390,23 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<label style='font-size:13px;opacity:.7'>Connected-time budget per visitor "
         "(minutes, 0 = unlimited)</label>"
         "<input type='number' name='tcap_min' min='0' value='%d'>"
+        "<label style='font-size:13px;opacity:.7'>Data budget per visitor "
+        "(MB, 0 = unlimited)</label>"
+        "<input type='number' name='dcap_mb' min='0' value='%d'>"
         "<button type='submit'>Save</button>"
         "</form>"
-        "<p class='note'>Speed caps each visitor up and down. The time budget is "
-        "lifetime online minutes &mdash; past it, they're cut off until you reset them.</p>"
+        "<p class='note'>Speed caps each visitor up and down. The time and data "
+        "budgets are lifetime totals &mdash; past either, they're cut off until "
+        "you reset them.</p>"
         "</div>"
         "<div class='card'>"
         "<p class='headline' style='font-size:1em'>Visitors</p>",
         wifi_has_uplink() ? "connected" : "connecting…",
         clients_count(), ttl / 60, config_client_kbps(),
-        config_connected_cap_seconds() / 60);
+        config_connected_cap_seconds() / 60, config_data_cap_mb());
 
-    int cap = config_connected_cap_seconds();
+    int cap  = config_connected_cap_seconds();
+    int dcap = config_data_cap_mb();
     for (int i = 0; i < n && o < BODY_SZ - 1100; i++) {
         char nm[128], hn[128], machex[13];
         html_escape(nm, sizeof(nm), list[i].name[0] ? list[i].name : "(no name yet)");
@@ -419,6 +426,15 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         if (cap > 0) snprintf(budget, sizeof(budget), "%u / %d min", used_min, cap / 60);
         else         snprintf(budget, sizeof(budget), "%u min", used_min);
 
+        // Lifetime data, as "X.Y MB" (integer math — no float printf on this build).
+        char data[40];
+        uint32_t mb = (uint32_t)(list[i].total_bytes >> 20);
+        uint32_t tenths = (uint32_t)(((list[i].total_bytes & 0xFFFFF) * 10) >> 20);
+        if (dcap > 0) snprintf(data, sizeof(data), "%lu.%lu / %d MB",
+                               (unsigned long)mb, (unsigned long)tenths, dcap);
+        else          snprintf(data, sizeof(data), "%lu.%lu MB",
+                               (unsigned long)mb, (unsigned long)tenths);
+
         // Per-user speed cap: -1 = global default, 0 = uncapped, else kbps.
         // `capstr` is the human label; `capval` pre-fills the form input.
         char capstr[20], capval[12];
@@ -432,11 +448,11 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             "<p class='sub' style='margin:0 0 4px'>&#x1F33F; <strong>%s</strong>"
             "%s%s <span style='opacity:.6'>&middot; %s</span></p>"
             "<p class='sub' style='margin:0 0 8px;opacity:.6;font-size:13px'>"
-            "online %s &middot; speed %s</p>"
+            "online %s &middot; %s &middot; speed %s</p>"
             "<div style='display:flex;gap:6px;flex-wrap:wrap'>",
             nm, hn[0] ? " &middot; " : "", hn,
             list[i].banned ? "<span style='color:#d8b24a'>over budget</span>" : status,
-            budget, capstr);
+            budget, data, capstr);
 
         // Per-user speed cap — MAC-keyed so it persists and works offline.
         // Blank input = clear back to the global default.
@@ -458,11 +474,12 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
                 "</form>",
                 ip);
         }
-        // Reset-time is MAC-keyed so it works even when the visitor is offline.
+        // Reset clears both budgets (time + data) and lifts any ban. MAC-keyed
+        // so it works even when the visitor is offline.
         o += snprintf(body + o, BODY_SZ - o,
             "<form method='POST' action='/admin/resettime' style='margin:0'>"
             "<input type='hidden' name='mac' value='%s'>"
-            "<button style='margin:0;padding:10px 12px;background:#1f3d29'>Reset time</button>"
+            "<button style='margin:0;padding:10px 12px;background:#1f3d29'>Reset</button>"
             "</form></div></div>",
             machex);
     }
@@ -544,13 +561,15 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     char rbody[256] = {0};
     int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
     if (n > 0) rbody[n] = '\0';
-    char ttl[16] = {0}, kbps[16] = {0}, tcap[16] = {0};
+    char ttl[16] = {0}, kbps[16] = {0}, tcap[16] = {0}, dcap[16] = {0};
     get_field(rbody, "ttl_min",  ttl,  sizeof(ttl));
     get_field(rbody, "kbps",     kbps, sizeof(kbps));
     get_field(rbody, "tcap_min", tcap, sizeof(tcap));
+    get_field(rbody, "dcap_mb",  dcap, sizeof(dcap));
     if (ttl[0])  config_set_leaf_ttl_seconds(atoi(ttl) * 60);
     if (kbps[0]) config_set_client_kbps(atoi(kbps));
     if (tcap[0]) config_set_connected_cap_seconds(atoi(tcap) * 60);
+    if (dcap[0]) config_set_data_cap_mb(atoi(dcap));
     return redirect_to(req, "/admin", NULL);
 }
 

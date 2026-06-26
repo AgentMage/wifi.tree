@@ -42,9 +42,10 @@ Key source files:
 - `src/wifi_manager.c` — NVS credential storage, AP+STA setup, NAPT
 - `src/dns_server.c` — selective DNS spoofing (SERVFAIL fast-fail until uplink is up)
 - `src/http_server.c` — HTTP handlers: portal, setup wizard, and the `/admin` page
-- `src/client_state.c` — per-MAC visitor table; persistent fields (name, hostname, `total_connected_s`, `banned`, `bw_cap_kbps`) survive reboot in a versioned NVS blob (namespace `users`), ephemeral fields (ip, leaf/seen timers) are RAM-only. Re-applies each device's persisted speed cap to the shaper on IP assignment. Maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`. Dirty-flushed via `clients_flush()`
-- `src/accounting.c` — 30s task: credits online visitors' connected time, enforces the connected-time cap (bans + revokes over-budget visitors), flushes the table
-- `src/config.c` — NVS-backed leaf TTL, per-client kbps, connected-time cap (`tcap`), admin password (salted SHA-256 via PSA crypto)
+- `src/client_state.c` — per-MAC visitor table; persistent fields (name, hostname, `total_connected_s`, `total_bytes`, `banned`, `bw_cap_kbps`) survive reboot in a versioned NVS blob (namespace `users`), ephemeral fields (ip, leaf/seen timers) are RAM-only. Re-applies each device's persisted speed cap to the shaper on IP assignment. Maps client IP→MAC via `esp_netif_dhcps_get_clients_by_mac`; hostnames captured from `IP_EVENT_ASSIGNED_IP_TO_CLIENT`. Dirty-flushed via `clients_flush()`
+- `src/shaper.c` — per-client token-bucket bandwidth cap in the lwIP forwarding hook; also meters forwarded bytes per IP (`shaper_take_bytes` drains them for the data budget)
+- `src/accounting.c` — 30s task: folds each visitor's forwarded bytes + online time into their persisted totals, enforces the connected-time and data caps (bans + revokes over-budget visitors), flushes the table
+- `src/config.c` — NVS-backed leaf TTL, per-client kbps, connected-time cap (`tcap`), data cap MB (`dcap`), admin password (salted SHA-256 via PSA crypto)
 - `src/reset_button.c` — GPIO0 5s hold → factory reset (wipes `wifi`, `cfg`, `users`)
 - `src/led.c` — GPIO2 status LED (fast=setup, slow=connecting, solid=online)
 - `src/html.h` — HTML templates as C string literals; dynamic pages (status card, admin) reuse `PORTAL_HEAD`/`PORTAL_FOOT` chrome
@@ -52,11 +53,11 @@ Key source files:
 Unlike the spec's original "single-session" ESP32, the firmware tracks visitors
 in a per-MAC table that **persists across reboots** (NVS), so returning visitors
 get a status card and keep their accumulated connected time. Operators get a
-password-gated `/admin` page (leaf TTL, speed cap, time budget; per-visitor
-kick / speed-override / reset-time). In place of the Pi's monthly *data* quota
-the ESP32 enforces a lifetime **connected-time budget** (it has no wall clock,
-so it counts elapsed online time, not calendar months). Still Pi-only: SQLite,
-data-volume metering, tc/CAKE bandwidth shaping.
+password-gated `/admin` page (leaf TTL, speed cap, time + data budgets;
+per-visitor speed-cap / kick / reset). In place of the Pi's monthly *data* quota
+the ESP32 enforces lifetime **connected-time and data budgets** (it has no wall
+clock, so it counts elapsed online time and forwarded bytes, not calendar
+months). Still Pi-only: SQLite, calendar-month quotas, tc/CAKE shaping.
 
 `sdkconfig.defaults` enables lwIP NAPT (`CONFIG_LWIP_IP_NAPT=y`), required for internet forwarding. `src/CMakeLists.txt` declares explicit `REQUIRES` (incl. `mbedtls` for PSA crypto).
 

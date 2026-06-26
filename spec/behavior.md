@@ -69,16 +69,19 @@ When no uplink credentials are stored:
 The ESP32 implementation keeps a per-MAC visitor table that **persists across
 reboots** in NVS (identity + lifetime fields: name, hostname, total connected
 time, banned flag; leaf/session timers stay RAM-only and reset on reboot). It
-has no SQLite and no monthly *data* quota, but it does enforce a per-visitor
-lifetime **connected-time budget** in place of the Pi's monthly data cap — the
-ESP32 has no wall clock, so it counts elapsed online time instead of calendar
-months. It implements the New, Active, and Expired states (a returning visitor
-with a fresh leaf sees a status card with their name, hostname, and remaining
-freshness), plus an **Over-budget** state: once a visitor's accumulated online
-time reaches the configured cap they're cut off and shown a "your leaf has
-fallen" card until an operator resets them. Operators get a password-gated admin
-page at `wifi.tree/admin` to view visitors, set the leaf TTL / speed cap /
-time budget, kick or speed-override a visitor, and reset a visitor's time.
+has no SQLite, but it enforces two per-visitor **lifetime budgets** in place of
+the Pi's monthly quota — a **connected-time budget** and a **data budget**
+(total MB up+down). Both are lifetime totals rather than calendar-month resets,
+because the ESP32 has no wall clock (it counts elapsed online time and forwarded
+bytes, not months). It implements the New, Active, and Expired states (a
+returning visitor with a fresh leaf sees a status card with their name,
+hostname, and remaining freshness), plus an **Over-budget** state: once a
+visitor reaches either configured cap they're cut off and shown a "your leaf has
+fallen" card (with their time + data used) until an operator resets them.
+Operators get a password-gated admin page at `wifi.tree/admin` to view visitors
+and their usage, set the leaf TTL / default speed cap / time budget / data
+budget, set a per-visitor speed cap, kick a visitor, and reset a visitor's
+budgets.
 
 Internet access **is gated by the leaf**: a custom lwIP IPv4 forwarding hook
 (`LWIP_HOOK_IP4_CANFORWARD`) drops uplink-bound packets from any AP client that
@@ -89,12 +92,14 @@ lose it again when the leaf expires. The same hook applies a per-client
 token-bucket **bandwidth cap** (default 100 kbps each way, operator-configurable
 at `wifi.tree/admin`) — deliberately slow, since the point is gentle shared
 woods wifi, not fast internet. Operators can also set a **per-visitor speed cap**
-that overrides the default for one device; like the time budget it's stored
-per-MAC and survives reboot (re-applied to the shaper when the device rejoins). Instead of the Pi's monthly *data* quota, the
-ESP32 enforces a lifetime **connected-time budget**: a 30s accounting task
-credits online time to each visitor (persisted to flash), and once a visitor
-passes the operator-set cap the forwarding hook stops carrying their traffic
-(they're "over budget") until reset. Monthly *data* metering remains Pi-only.
+that overrides the default for one device; like the budgets it's stored per-MAC
+and survives reboot (re-applied to the shaper when the device rejoins). In place
+of the Pi's monthly *data* quota, the ESP32 enforces lifetime **connected-time**
+and **data** budgets: the forwarding hook meters each visitor's bytes (up+down)
+as it carries them, and a 30s accounting task folds those bytes and online time
+into persisted per-visitor totals. Once a visitor passes either operator-set cap
+the hook stops carrying their traffic (they're "over budget") until reset.
+Calendar-month *data* metering remains Pi-only.
 
 ## Configurable Parameters
 

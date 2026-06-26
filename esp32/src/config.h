@@ -19,6 +19,12 @@ void config_set_client_kbps(int kbps);
 int  config_connected_cap_seconds(void);
 void config_set_connected_cap_seconds(int seconds);
 
+// Lifetime data budget per visitor, in megabytes (up + down). 0 => no limit.
+// When a visitor's accumulated traffic reaches this, they're cut off until an
+// admin resets them. Default 0 (off).
+int  config_data_cap_mb(void);
+void config_set_data_cap_mb(int mb);
+
 // Admin password (stored as salted SHA-256, never plaintext).
 bool config_has_admin_password(void);
 void config_set_admin_password(const char *pw);

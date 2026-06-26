@@ -13,6 +13,7 @@ typedef struct {
     char     name[41];          // visitor's chosen name (raw, escape on render)
     char     hostname[33];      // DHCP-reported hostname, "" if unknown
     uint32_t total_connected_s; // lifetime seconds spent online (time budget)
+    uint64_t total_bytes;       // lifetime forwarded bytes up+down (data budget)
     bool     banned;            // true => cut off (over budget or kicked-for-good)
     int32_t  bw_cap_kbps;       // per-user speed cap; -1 = global default, 0 = uncapped
     // ── Ephemeral (RAM only, zeroed on boot) ──
@@ -70,11 +71,14 @@ uint32_t clients_set_bw_cap_by_mac(const uint8_t mac[6], int kbps);
 // the MAC isn't in the table. Marks the table dirty.
 void clients_reset_budget_by_mac(const uint8_t mac[6]);
 
-// Accounting tick: credit `elapsed_s` of online time to every visitor whose
-// leaf is currently active (ttl_s = leaf TTL used to judge "online"). If
-// cap_s > 0, any visitor reaching the cap is banned and their leaf cleared;
-// the IPs of newly-banned visitors are written to banned_out (up to `max`) and
-// *n_out is set, so the caller can revoke their internet grants. Marks the
-// table dirty when totals change (caller should clients_flush() afterward).
+// Accounting tick: fold each visitor's forwarded bytes (from the shaper) into
+// their lifetime total, and credit `elapsed_s` of online time to every visitor
+// whose leaf is currently active (ttl_s = leaf TTL used to judge "online").
+// A visitor who reaches the connected-time cap (cap_s > 0) or the data cap
+// (data_cap_bytes > 0) is banned and their leaf cleared; the IPs of newly-banned
+// visitors are written to banned_out (up to `max`) and *n_out is set, so the
+// caller can revoke their internet grants. Marks the table dirty when totals
+// change (caller should clients_flush() afterward).
 void clients_account_and_enforce(int elapsed_s, int ttl_s, int cap_s,
+                                 uint64_t data_cap_bytes,
                                  uint32_t *banned_out, int max, int *n_out);

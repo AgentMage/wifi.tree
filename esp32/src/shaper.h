@@ -15,3 +15,8 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir);
 // Override the per-client rate for one IP (kbit/s; 0 = uncapped, -1 = clear
 // override and use the global default).
 void shaper_set_override(uint32_t ip_nbo, int kbps);
+
+// Return the forwarded-byte count accumulated for IP (up + down) since the last
+// call, and zero it. Used by the accounting tick to fold usage into the
+// persistent per-visitor total. Returns 0 if the IP has no live entry.
+uint64_t shaper_take_bytes(uint32_t ip_nbo);

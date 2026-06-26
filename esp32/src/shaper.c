@@ -13,6 +13,7 @@ typedef struct {
     int64_t  tokens[2];
     int64_t  last_us[2];
     int      override_kbps;  // -1 = use global default
+    uint64_t bytes;          // forwarded bytes (up+down) since last drain
     bool     used;
 } entry_t;
 
@@ -36,6 +37,7 @@ static entry_t *find_or_make(uint32_t ip_nbo, int64_t now) {
     e->ip = ip_nbo;
     e->used = true;
     e->override_kbps = -1;
+    e->bytes = 0;
     e->tokens[0] = e->tokens[1] = 0;
     e->last_us[0] = e->last_us[1] = 0; // first packet accrues a full burst of credit
     (void)now;
@@ -50,6 +52,7 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
     entry_t *e = find_or_make(ip_nbo, now);
     int kbps = e->override_kbps >= 0 ? e->override_kbps : config_client_kbps();
     if (kbps <= 0) {                         // 0 = uncapped
+        e->bytes += len;                     // still metered for the data budget
         taskEXIT_CRITICAL(&s_mux);
         return true;
     }
@@ -61,10 +64,24 @@ bool shaper_admit(uint32_t ip_nbo, uint16_t len, int dir) {
         if (e->tokens[dir] > burst) e->tokens[dir] = burst;
         e->last_us[dir] = now;
     }
-    if (e->tokens[dir] >= len) { e->tokens[dir] -= len; admit = true; }
+    if (e->tokens[dir] >= len) { e->tokens[dir] -= len; admit = true; e->bytes += len; }
     else                         admit = false;
     taskEXIT_CRITICAL(&s_mux);
     return admit;
+}
+
+uint64_t shaper_take_bytes(uint32_t ip_nbo) {
+    uint64_t b = 0;
+    taskENTER_CRITICAL(&s_mux);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (s_tab[i].used && s_tab[i].ip == ip_nbo) {
+            b = s_tab[i].bytes;
+            s_tab[i].bytes = 0;
+            break;
+        }
+    }
+    taskEXIT_CRITICAL(&s_mux);
+    return b;
 }
 
 void shaper_set_override(uint32_t ip_nbo, int kbps) {

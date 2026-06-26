@@ -8,10 +8,12 @@
 #define DEFAULT_TTL_SECS  (3 * 3600)
 #define DEFAULT_KBPS      100
 #define DEFAULT_TCAP_SECS 0
+#define DEFAULT_DCAP_MB   0
 
 static int s_ttl  = DEFAULT_TTL_SECS;
 static int s_kbps = DEFAULT_KBPS;
 static int s_tcap = DEFAULT_TCAP_SECS;
+static int s_dcap = DEFAULT_DCAP_MB;
 
 void config_init(void) {
     psa_crypto_init();
@@ -21,6 +23,7 @@ void config_init(void) {
         if (nvs_get_i32(h, "ttl", &v) == ESP_OK)  s_ttl = v;
         if (nvs_get_i32(h, "kbps", &v) == ESP_OK) s_kbps = v;
         if (nvs_get_i32(h, "tcap", &v) == ESP_OK) s_tcap = v;
+        if (nvs_get_i32(h, "dcap", &v) == ESP_OK) s_dcap = v;
         nvs_close(h);
     }
 }
@@ -62,6 +65,16 @@ void config_set_connected_cap_seconds(int seconds) {
     if (seconds < 0) seconds = 0;
     s_tcap = seconds;
     save_i32("tcap", seconds);
+}
+
+int config_data_cap_mb(void) {
+    return s_dcap;
+}
+
+void config_set_data_cap_mb(int mb) {
+    if (mb < 0) mb = 0;
+    s_dcap = mb;
+    save_i32("dcap", mb);
 }
 
 // ── Password (salted SHA-256) ─────────────────────────────────────────────────
