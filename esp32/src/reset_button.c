@@ -39,8 +39,9 @@ static void reset_task(void *arg) {
             held_ms += POLL_MS;
             if (held_ms >= HOLD_MS) {
                 ESP_LOGW(TAG, "Factory reset — wiping uplink creds + admin config, rebooting");
-                wipe_namespace("wifi");  // uplink ssid/pass
-                wipe_namespace("cfg");   // admin password + leaf TTL
+                wipe_namespace("wifi");   // uplink ssid/pass
+                wipe_namespace("cfg");    // admin password + leaf TTL
+                wipe_namespace("users");  // persisted visitor records + time budget
                 led_blink_n(5, 150);     // confirm reset to the user before reboot
                 esp_restart();
             }

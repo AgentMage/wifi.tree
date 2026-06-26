@@ -3,20 +3,30 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// In-RAM, single-session client tracking. Keyed by MAC, capped at MAX_CLIENTS.
-// State is lost on reboot by design — the ESP32 has no persistent user DB.
+// Per-MAC client tracking, capped at MAX_CLIENTS. The identity and lifetime
+// fields persist across reboots in NVS (namespace "users"); the ephemeral
+// fields are RAM-only and reset to 0 on boot (so leaves still reset on reboot).
 
 typedef struct {
+    // ── Persistent (saved to NVS) ──
     uint8_t  mac[6];
+    char     name[41];          // visitor's chosen name (raw, escape on render)
+    char     hostname[33];      // DHCP-reported hostname, "" if unknown
+    uint32_t total_connected_s; // lifetime seconds spent online (time budget)
+    bool     banned;            // true => cut off (over budget or kicked-for-good)
+    // ── Ephemeral (RAM only, zeroed on boot) ──
     uint32_t ip;             // last-seen IP (network byte order), 0 if unknown
-    char     name[41];       // visitor's chosen name (raw, escape on render)
-    char     hostname[33];   // DHCP-reported hostname, "" if unknown
     int64_t  first_seen_us;  // esp_timer_get_time() at first sighting
     int64_t  leaf_grown_us;  // when the current leaf was grown, 0 = never
     bool     used;
 } client_t;
 
+// Load any persisted records from NVS and prepare the in-RAM table.
 void clients_init(void);
+
+// Write the table to NVS if it has changed since the last flush (no-op when
+// clean). Cheap when unchanged; call periodically (e.g. the 30s accounting tick).
+void clients_flush(void);
 
 // Subscribe to DHCP "IP assigned to client" events so client hostnames
 // (DHCP option 12) get recorded. Call once, after the default event loop exists.
