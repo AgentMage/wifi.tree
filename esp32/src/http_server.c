@@ -341,6 +341,21 @@ static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) 
     if (h > 0) snprintf(fresh, sizeof(fresh), "%dh %dm", h, m);
     else       snprintf(fresh, sizeof(fresh), "%dm", m);
 
+    int ttl = config_leaf_ttl_seconds();
+    char lbar[320] = "";
+    if (ttl > 0) {
+        int pct = secs_left * 100 / ttl; if (pct > 100) pct = 100; if (pct < 0) pct = 0;
+        const char *col = pct > 50 ? "#2e7d32" : (pct > 25 ? "#b8860b" : "#a33");
+        snprintf(lbar, sizeof(lbar),
+            "<p class='sub'>About <strong>%s</strong> of freshness left.</p>"
+            "<div class='ubar' style='margin:8px 0 4px'>"
+            "<div style='height:100%%;width:%d%%;margin-left:%d%%;background:%s'></div></div>"
+            "<p class='sub'>You&#39;re online</p>",
+            fresh, pct, 100 - pct, col);
+    } else {
+        snprintf(lbar, sizeof(lbar), "<p class='sub'>You&#39;re online</p>");
+    }
+
     // The visitor's own lifetime budgets: effective cap = override (>=0) else
     // global; 0/none = unlimited (show usage text only, no bar).
     unsigned used_min = c->total_connected_s / 60;
@@ -352,40 +367,59 @@ static esp_err_t send_status_card(httpd_req_t *req, client_t *c, int secs_left) 
     int gdcap = config_data_cap_mb();
     int eff_dmb = c->dcap_override >= 0 ? c->dcap_override : (gdcap > 0 ? gdcap : 0);
 
-    char ttxt[48], dtxt[48], tbar[280] = "", dbar[280] = "";
-    if (eff_tmin > 0) {
-        int pct = (int)(used_min * 100 / (unsigned)eff_tmin); if (pct > 100) pct = 100;
-        const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
-        snprintf(ttxt, sizeof(ttxt), "%u / %d min", used_min, eff_tmin);
-        snprintf(tbar, sizeof(tbar), "<div class='ubar'><div style='width:%d%%;background:%s'></div></div>", pct, col);
-    } else snprintf(ttxt, sizeof(ttxt), "%u min", used_min);
-    if (eff_dmb > 0) {
-        int pct = (int)(used_tenths * 10 / (uint32_t)eff_dmb); if (pct > 100) pct = 100;
-        const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
-        snprintf(dtxt, sizeof(dtxt), "%lu.%lu / %d MB", (unsigned long)mb, (unsigned long)tenths, eff_dmb);
-        snprintf(dbar, sizeof(dbar), "<div class='ubar'><div style='width:%d%%;background:%s'></div></div>", pct, col);
-    } else snprintf(dtxt, sizeof(dtxt), "%lu.%lu MB", (unsigned long)mb, (unsigned long)tenths);
+    // Build usage card into heap to avoid blowing the 8 KB httpd stack.
+    // Always shown; bar only appears when a finite cap is set.
+    char *usage_card = malloc(1024);
+    if (usage_card) {
+        int ul = snprintf(usage_card, 1024, "<div class='card'>");
+        if (eff_tmin > 0) {
+            int pct = (int)(used_min * 100 / (unsigned)eff_tmin); if (pct > 100) pct = 100;
+            const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+            ul += snprintf(usage_card + ul, 1024 - ul,
+                "<div class='ubar'><div style='width:%d%%;background:%s'></div></div>"
+                "<p class='sub' style='display:flex;justify-content:space-between;margin:2px 0 0'>"
+                "<span>&#x23F1;&#xFE0F; Time Total</span><strong>%u / %d min</strong></p>",
+                pct, col, used_min, eff_tmin);
+        } else {
+            ul += snprintf(usage_card + ul, 1024 - ul,
+                "<p class='sub' style='display:flex;justify-content:space-between;margin:2px 0 0'>"
+                "<span>&#x23F1;&#xFE0F; Time Total</span><strong>%u min</strong></p>",
+                used_min);
+        }
+        if (eff_dmb > 0) {
+            int pct = (int)(used_tenths * 10 / (uint32_t)eff_dmb); if (pct > 100) pct = 100;
+            const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+            ul += snprintf(usage_card + ul, 1024 - ul,
+                "<div class='ubar' style='margin-top:10px'><div style='width:%d%%;background:%s'></div></div>"
+                "<p class='sub' style='display:flex;justify-content:space-between;margin:2px 0 0'>"
+                "<span>&#x1F4CA; Data Used</span><strong>%lu.%lu / %d MB</strong></p>",
+                pct, col, (unsigned long)mb, (unsigned long)tenths, eff_dmb);
+        } else {
+            ul += snprintf(usage_card + ul, 1024 - ul,
+                "<p class='sub' style='display:flex;justify-content:space-between;margin:2px 0 0'>"
+                "<span>&#x1F4CA; Data Used</span><strong>%lu.%lu MB</strong></p>",
+                (unsigned long)mb, (unsigned long)tenths);
+        }
+        snprintf(usage_card + ul, 1024 - ul, "</div>");
+    }
 
     char body[1800];
     int len = snprintf(body, sizeof(body),
-        "<div class='card ok'>"
-        "<p class='headline'>Your leaf is still fresh, %s &#x1F33F;</p>"
-        "<p class='sub'>You're online. About <strong>%s</strong> of freshness left.</p>"
+        "<div class='card ok leafy'><div class='success' style='padding-top:44px'>"
+        "<div class='leaf-burst' style='margin-bottom:10px'><span class='sway'>&#x1F33F;</span></div>"
+        "<p class='headline'>Your leaf is still fresh, %s</p>"
+        "%s"
         "%s%s%s"
-        "</div>"
-        "<div class='card'>"
-        "<p class='sub' style='display:flex;justify-content:space-between;margin:0'>"
-        "<span>&#x23F1;&#xFE0F; Connected time</span><strong>%s</strong></p>%s"
-        "<p class='sub' style='display:flex;justify-content:space-between;margin:0'>"
-        "<span>&#x1F4CA; Data used</span><strong>%s</strong></p>%s"
-        "</div>"
-        "<a class='btnlink' href='http://wifi.tree'>Keep browsing &rarr;</a>",
-        safe_name, fresh,
+        "</div></div>%s"
+        "<a class='btnlink' href='https://fast.com'>Test Speed &rarr;</a>",
+        safe_name,
+        lbar,
         safe_host[0] ? "<p class='sub' style='opacity:.6'>device: " : "",
         safe_host[0] ? safe_host : "",
         safe_host[0] ? "</p>" : "",
-        ttxt, tbar, dtxt, dbar);
+        usage_card ? usage_card : "");
     if (len >= (int)sizeof(body)) len = sizeof(body) - 1;
+    free(usage_card);
 
     send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);
@@ -416,31 +450,16 @@ static esp_err_t send_over_budget_card(httpd_req_t *req, client_t *c) {
     return send_portal_foot(req);
 }
 
-static esp_err_t portal_get_handler(httpd_req_t *req) {
-    int ttl = config_leaf_ttl_seconds();
-    uint32_t ip = client_ip(req);
-    client_t *c = clients_find_by_ip(ip);
-    if (c && c->banned)
-        return send_over_budget_card(req, c);
-    if (client_leaf_active(c, ttl)) {
-        // Re-open the gate for this IP — covers a reconnect that got a new DHCP
-        // lease (leaf is keyed by MAC, but the internet grant is keyed by IP).
-        if (ip) {
-            int64_t expiry = ttl <= 0 ? 0 : c->leaf_grown_us + (int64_t)ttl * 1000000;
-            authz_grant(ip, expiry);
-        }
-        return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
-    }
-
-    // No fresh leaf. A returning visitor (we have their name) gets a personalized
-    // "welcome back / renew" card with the name pre-filled; a brand-new visitor
-    // gets the customizable welcome + empty name form.
+// Renders the welcome / renew-leaf form for a visitor with no active leaf.
+// Extracted into its own function so its large locals don't bloat the frame
+// of portal_get_handler when it takes the banned or active-leaf early-return path.
+static esp_err_t send_welcome_form(httpd_req_t *req, const client_t *c) {
     char accent[10];
     accent_safe(accent, sizeof(accent), portalcfg_get("accent"));
 
     char headline[320], subline[768], nameval[256];
     const char *btn;
-    if (c && c->name[0]) {                       // known, leaf wilted → renew
+    if (c && c->name[0]) {
         char nm[256];
         html_escape(nm, sizeof(nm), c->name);
         snprintf(headline, sizeof(headline), "Welcome back, %s &#x1F33F;", nm);
@@ -448,7 +467,7 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
                 sizeof(subline));
         strlcpy(nameval, nm, sizeof(nameval));
         btn = "Renew my leaf &#x1F33F;";
-    } else {                                     // brand-new visitor
+    } else {
         html_escape(headline, sizeof(headline), portalcfg_get("whead"));
         escape_br(subline, sizeof(subline), portalcfg_get("wtext"));
         nameval[0] = '\0';
@@ -472,6 +491,25 @@ static esp_err_t portal_get_handler(httpd_req_t *req) {
     send_portal_head(req);
     httpd_resp_send_chunk(req, body, len);
     return send_portal_foot(req);
+}
+
+// Each branch dispatches immediately to its own function so the large locals
+// of send_welcome_form / send_status_card / send_over_budget_card never share
+// a stack frame with portal_get_handler's own locals.
+static esp_err_t portal_get_handler(httpd_req_t *req) {
+    int ttl = config_leaf_ttl_seconds();
+    uint32_t ip = client_ip(req);
+    client_t *c = clients_find_by_ip(ip);
+    if (c && c->banned)
+        return send_over_budget_card(req, c);
+    if (client_leaf_active(c, ttl)) {
+        if (ip) {
+            int64_t expiry = ttl <= 0 ? 0 : c->leaf_grown_us + (int64_t)ttl * 1000000;
+            authz_grant(ip, expiry);
+        }
+        return send_status_card(req, c, client_leaf_seconds_left(c, ttl));
+    }
+    return send_welcome_form(req, c);
 }
 
 // Handles the "Grow a Leaf" form POST.
@@ -592,14 +630,10 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         "<div class='stat'><div class='n' id='c-up'>&ndash;</div><div class='l'>upload</div></div>"
         "<div class='stat'><div class='n' id='c-ch'>%d</div><div class='l'>channel</div></div>"
         "</div>"
-        "<p class='muted' style='margin-top:-10px'>uplink: %s &middot; %d known visitor(s)</p>"
-        "<h2>Live traffic</h2>"
-        "<table><thead><tr><th>device</th><th>name</th><th>signal</th>"
-        "<th>down</th><th>up</th><th>total</th></tr></thead>"
-        "<tbody id='live'><tr><td colspan='6' class='muted'>loading&hellip;</td></tr></tbody></table>",
+        "<p class='muted' style='margin-top:-10px'>uplink: %s &middot; %d known visitor(s)</p>",
         clients_count(), pri, wifi_has_uplink() ? "online" : "connecting&hellip;", n);
 
-    static const char *HEAD[3] = { "Active now", "Registered", "Not yet registered" };
+    static const char *HEAD[3] = { "Active Leafs", "Registered", "Not yet registered" };
     for (int g = 0; g < 3 && o < BODY_SZ - 2400; g++) {
         int members = 0;
         for (int gi = 0; gi < n; gi++) if (visitor_group(&list[gi], ttl) == g) members++;
@@ -645,29 +679,57 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
         uint32_t used_tenths = (uint32_t)((u->total_bytes * 10) >> 20);
         int eff_dmb = u->dcap_override >= 0 ? u->dcap_override : (dcap > 0 ? dcap : 0);
 
-        // Build optional progress bars (only when a finite cap applies).
-        char tbar[170] = "", dbar[170] = "", ttxt[48], dtxt[48];
+        // Build usage cells — always shown; bar only when a finite cap applies.
+        char tcell[270] = "", dcell[270] = "", ubrow[600] = "", sbar[240] = "";
         if (eff_tmin > 0) {
             int pct = (int)(used_min * 100 / (unsigned)eff_tmin); if (pct > 100) pct = 100;
             const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
-            snprintf(tbar, sizeof(tbar),
-                "<span class='bar'><span class='f' style='width:%d%%;background:%s'></span></span>", pct, col);
-            snprintf(ttxt, sizeof(ttxt), "%u/%d min", used_min, eff_tmin);
-        } else snprintf(ttxt, sizeof(ttxt), "%u min", used_min);
+            snprintf(tcell, sizeof(tcell),
+                "<div class='bcell col'>&#x23F1;&#xFE0F; Time Total"
+                "<span class='bar' style='width:100%%'>"
+                "<span class='f' style='width:%d%%;background:%s'></span></span>"
+                "<span class='bnum'>%u / %d min</span></div>",
+                pct, col, used_min, eff_tmin);
+        } else {
+            snprintf(tcell, sizeof(tcell),
+                "<div class='bcell col'>&#x23F1;&#xFE0F; Time Total"
+                "<span class='bnum'>%u min</span></div>",
+                used_min);
+        }
         if (eff_dmb > 0) {
             int pct = (int)(used_tenths * 10 / (uint32_t)eff_dmb); if (pct > 100) pct = 100;
             const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
-            snprintf(dbar, sizeof(dbar),
-                "<span class='bar'><span class='f' style='width:%d%%;background:%s'></span></span>", pct, col);
-            snprintf(dtxt, sizeof(dtxt), "%lu.%lu/%d MB", (unsigned long)mb, (unsigned long)tenths, eff_dmb);
-        } else snprintf(dtxt, sizeof(dtxt), "%lu.%lu MB", (unsigned long)mb, (unsigned long)tenths);
+            snprintf(dcell, sizeof(dcell),
+                "<div class='bcell col'>&#x1F4CA; Data Used"
+                "<span class='bar' style='width:100%%'>"
+                "<span class='f' style='width:%d%%;background:%s'></span></span>"
+                "<span class='bnum'>%lu.%lu / %d MB</span></div>",
+                pct, col, (unsigned long)mb, (unsigned long)tenths, eff_dmb);
+        } else {
+            snprintf(dcell, sizeof(dcell),
+                "<div class='bcell col'>&#x1F4CA; Data Used"
+                "<span class='bnum'>%lu.%lu MB</span></div>",
+                (unsigned long)mb, (unsigned long)tenths);
+        }
+        snprintf(ubrow, sizeof(ubrow), "<div class='brow'>%s%s</div>", tcell, dcell);
+
+        // Session bar: shows leaf TTL progress for active visitors.
+        if (g == 0 && ttl > 0 && u->leaf_grown_us > 0) {
+            int elapsed_s = ttl - left;
+            if (elapsed_s < 0) elapsed_s = 0;
+            int pct = elapsed_s * 100 / ttl; if (pct > 100) pct = 100;
+            const char *col = pct < 75 ? "#2e7d32" : (pct < 100 ? "#b8860b" : "#a33");
+            snprintf(sbar, sizeof(sbar),
+                "<div style='font-size:.78em;opacity:.6;margin-top:6px'>&#x1F341; Session &mdash; %dh %dm left</div>"
+                "<span class='bar' style='width:100%%'><span class='f' style='width:%d%%;background:%s'></span></span>",
+                left / 3600, (left % 3600) / 60, pct, col);
+        }
 
         // Per-user override prefills (blank = use global default).
-        char capval[12], tval[12], dval[12], capstr[20];
-        if (u->bw_cap_kbps < 0)       { capval[0] = '\0'; snprintf(capstr, sizeof(capstr), "default"); }
-        else if (u->bw_cap_kbps == 0) { snprintf(capval, sizeof(capval), "0"); snprintf(capstr, sizeof(capstr), "uncapped"); }
-        else { snprintf(capval, sizeof(capval), "%d", (int)u->bw_cap_kbps);
-               snprintf(capstr, sizeof(capstr), "%d kbps", (int)u->bw_cap_kbps); }
+        char capval[12], tval[12], dval[12];
+        if (u->bw_cap_kbps < 0)       capval[0] = '\0';
+        else if (u->bw_cap_kbps == 0) snprintf(capval, sizeof(capval), "0");
+        else                           snprintf(capval, sizeof(capval), "%d", (int)u->bw_cap_kbps);
         if (u->tcap_override < 0) tval[0] = '\0'; else snprintf(tval, sizeof(tval), "%d", (int)u->tcap_override / 60);
         if (u->dcap_override < 0) dval[0] = '\0'; else snprintf(dval, sizeof(dval), "%d", (int)u->dcap_override);
 
@@ -688,14 +750,12 @@ static esp_err_t admin_dashboard(httpd_req_t *req) {
             continue;
         }
 
-        // Active / registered: usage bars + speed chip, then the Manage section.
+        // Active / registered: usage section + session bar + exempt chip, then Manage.
         o += snprintf(body + o, BODY_SZ - o,
-            "<div class='bcell'>&#x23F1;&#xFE0F; %s<span class='bnum'>%s</span></div>"
-            "<div class='bcell'>&#x1F4CA; %s<span class='bnum'>%s</span></div>"
-            "<div class='bcell'>&#x1F6A6; <span class='bnum'>%s</span>%s</div>"
+            "%s%s%s"
             "<details class='manage'><summary>Manage</summary>",
-            tbar, ttxt, dbar, dtxt, capstr,
-            exempt ? " <span class='pill ok'>exempt</span>" : "");
+            ubrow, sbar,
+            exempt ? "<span class='pill ok' style='display:block;margin:6px 0 2px'>exempt</span>" : "");
 
         // Manage: rename, speed, time, data overrides.
         o += snprintf(body + o, BODY_SZ - o,
@@ -776,7 +836,7 @@ static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
     const char *tcap_ck = tcap > 0 ? "checked" : "", *tcap_dis = tcap > 0 ? "" : "disabled";
     const char *dcap_ck = dcap > 0 ? "checked" : "", *dcap_dis = dcap > 0 ? "" : "disabled";
 
-    char body[2200];
+    char body[2800];
     int len = snprintf(body, sizeof(body),
         "<h2>Settings</h2>"
         "<div class='card2'><form class='cust' method='POST' action='/admin/settings'>"
@@ -807,6 +867,26 @@ static esp_err_t admin_settings_get_handler(httpd_req_t *req) {
         "<script>function t(cb,id){document.getElementById(id).disabled=!cb.checked}</script>",
         ttl_ck, ttl_v, ttl_dis, kbps_ck, kbps_v, kbps_dis,
         tcap_ck, tcap_v, tcap_dis, dcap_ck, dcap_v, dcap_dis);
+
+    char cur_ssid[64] = {0}, cur_pass[64] = {0};
+    wifi_load_credentials(cur_ssid, sizeof(cur_ssid), cur_pass, sizeof(cur_pass));
+    char ssid_safe[200];
+    html_escape(ssid_safe, sizeof(ssid_safe), cur_ssid);
+    len += snprintf(body + len, sizeof(body) - len,
+        "<h2>Source WiFi</h2>"
+        "<div class='card2'><form method='POST' action='/admin/wifi' "
+        "onsubmit='return confirm(\"Change uplink WiFi and reboot?\")'>"
+        "<label>Network name (SSID)</label>"
+        "<input type='text' name='ssid' value='%s' placeholder='Network name' "
+        "autocomplete='off' style='width:100%%'>"
+        "<label style='margin-top:10px'>Password</label>"
+        "<input type='password' name='pass' placeholder='Leave blank for open networks' "
+        "style='width:100%%'>"
+        "<p class='muted' style='margin:6px 0 0'>Type SSID manually to connect to a hidden network.</p>"
+        "<div style='margin-top:14px'><button type='submit'>Change &amp; Reboot</button></div>"
+        "</form></div>",
+        ssid_safe);
+    if (len >= (int)sizeof(body)) len = sizeof(body) - 1;
     return send_admin(req, body, len);
 }
 
@@ -1045,6 +1125,25 @@ static esp_err_t admin_settings_handler(httpd_req_t *req) {
     return redirect_to(req, "/admin/settings", NULL);
 }
 
+// POST /admin/wifi — change the uplink WiFi credentials and reboot.
+static esp_err_t admin_wifi_handler(httpd_req_t *req) {
+    if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
+    char rbody[200] = {0};
+    int n = httpd_req_recv(req, rbody, sizeof(rbody) - 1);
+    if (n > 0) rbody[n] = '\0';
+    char ssid[64] = {0}, pass[64] = {0};
+    get_field(rbody, "ssid", ssid, sizeof(ssid));
+    get_field(rbody, "pass", pass, sizeof(pass));
+    if (ssid[0] == '\0') return redirect_to(req, "/admin/settings", NULL);
+    wifi_save_credentials(ssid, pass);
+    ESP_LOGI(TAG, "uplink WiFi changed to: %s — rebooting", ssid);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, SAVING_HTML, HTTPD_RESP_USE_STRLEN);
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    esp_restart();
+    return ESP_OK;
+}
+
 // POST /admin/rename — rename a visitor (MAC-keyed).
 static esp_err_t admin_rename_handler(httpd_req_t *req) {
     if (!admin_authed(req)) return redirect_to(req, "/admin", NULL);
@@ -1278,7 +1377,7 @@ void http_server_start_portal(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.max_uri_handlers = 28;
-    cfg.stack_size = 8192;   // headroom for admin handlers (default 4096 too tight)
+    cfg.stack_size = 12288;  // portal path: send_status_card→send_portal_head needs ~6 KB
 
     httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
@@ -1296,6 +1395,7 @@ void http_server_start_portal(void) {
         { .uri = "/admin/setpw",    .method = HTTP_POST, .handler = admin_setpw_handler },
         { .uri = "/admin/login",    .method = HTTP_POST, .handler = admin_login_handler },
         { .uri = "/admin/settings", .method = HTTP_POST, .handler = admin_settings_handler },
+        { .uri = "/admin/wifi",     .method = HTTP_POST, .handler = admin_wifi_handler },
         { .uri = "/admin/kick",     .method = HTTP_POST, .handler = admin_kick_handler },
         { .uri = "/admin/userspeed",.method = HTTP_POST, .handler = admin_userspeed_handler },
         { .uri = "/admin/usertime", .method = HTTP_POST, .handler = admin_usertime_handler },

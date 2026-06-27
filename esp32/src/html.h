@@ -158,6 +158,9 @@ static const char PORTAL_CSS_STR[] = PORTAL_CSS;
   ".vmeta{opacity:.55;font-size:.82em;margin:3px 0 8px}" \
   ".bcell{display:flex;align-items:center;gap:8px;font-size:.82em;margin:4px 0;opacity:.92}" \
   ".bcell .bnum{opacity:.85;white-space:nowrap}" \
+  ".brow{display:flex;gap:12px;margin:4px 0}" \
+  ".bcell.col{flex:1;flex-direction:column;align-items:flex-start;gap:3px}" \
+  ".bcell.col .bar{width:100%;display:block}" \
   ".chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}" \
   ".chip{background:#0b1a0f;border:1px solid #1f3d29;border-radius:99px;padding:3px 10px;" \
     "font-size:.78em;opacity:.9;white-space:nowrap}" \
@@ -233,21 +236,13 @@ static const char ADMIN_FOOT[] = "</div></body></html>";
 "<script>" \
 "var prev={},pt=0;" \
 "function hbps(b){var u=['bps','Kbps','Mbps'],i=0;while(b>=1000&&i<2){b/=1000;i++}return b.toFixed(i?1:0)+' '+u[i]}" \
-"function hb(k){var u=['KB','MB','GB'],i=0;while(k>=1024&&i<2){k/=1024;i++}return k.toFixed(i?1:0)+' '+u[i]}" \
-"function esc(s){return s.replace(/[&<>]/g,function(c){return c=='&'?'&amp;':c=='<'?'&lt;':'&gt;'})}" \
 "function tick(){fetch('/admin/stats.json').then(function(r){return r.json()}).then(function(d){" \
 "document.getElementById('c-conn').textContent=d.conn;" \
 "document.getElementById('c-ch').textContent=d.ch;" \
 "var now=Date.now()/1000,dt=Math.max(now-pt,0.5),aD=0,aU=0;" \
-"var rows=d.clients.map(function(c){" \
-"var p=prev[c.ip]||{dn:c.dn,up:c.up};" \
-"var dn=Math.max((c.dn-p.dn)*1024*8/dt,0),up=Math.max((c.up-p.up)*1024*8/dt,0);" \
-"aD+=dn;aU+=up;prev[c.ip]={dn:c.dn,up:c.up};" \
-"var nm=c.name?esc(c.name):'<span class=muted>&mdash;</span>';" \
-"var h=c.host?esc(c.host):'';" \
-"return '<tr><td>'+c.ip+'<div class=muted>'+h+'</div></td><td>'+nm+'</td><td>'+c.rssi+' dBm</td><td>'+hbps(dn)+'</td><td>'+hbps(up)+'</td><td>'+hb(c.dn+c.up)+'</td></tr>'" \
-"}).join('');" \
-"document.getElementById('live').innerHTML=d.clients.length?rows:'<tr><td colspan=6 class=muted>(nobody connected)</td></tr>';" \
+"d.clients.forEach(function(c){var p=prev[c.ip]||{dn:c.dn,up:c.up};" \
+"aD+=Math.max((c.dn-p.dn)*1024*8/dt,0);aU+=Math.max((c.up-p.up)*1024*8/dt,0);" \
+"prev[c.ip]={dn:c.dn,up:c.up};});" \
 "document.getElementById('c-down').textContent=hbps(aD);" \
 "document.getElementById('c-up').textContent=hbps(aU);" \
 "pt=now}).catch(function(e){})}" \
