@@ -7,6 +7,11 @@ page, enter their name to "grow a leaf", and get internet access. The leaf
 metaphor frames shared bandwidth as a shared resource: leaves dry up, data
 runs out, be kind.
 
+**wifi.mom** is the brand and distributor behind wifi.tree. A wifi.mom is the
+community host — the person who sets up and tends a wifi.tree for their
+neighborhood, venue, or gathering. The software is the tree; the mom is the
+one who planted it.
+
 ## Network Architecture
 
 ```

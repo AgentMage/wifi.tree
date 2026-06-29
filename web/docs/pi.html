@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wifi.mom — Raspberry Pi setup guide</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a class="nav-brand" href="/">🌳 wifi.mom</a>
+    <div class="nav-links">
+      <a href="/visitor" class="hide-sm">for visitors</a>
+      <a href="/docs/" class="active">docs</a>
+      <a href="/order">order</a>
+      <a href="https://github.com/AgentMage/wifi.tree">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="logo">🌱</div>
+  <h1>Raspberry Pi Setup Guide</h1>
+  <p class="tag">full-featured · monthly quotas · always-on</p>
+</div>
+
+<div class="section">
+  <div class="prose">
+
+    <h2>What you'll need</h2>
+    <ul>
+      <li>Raspberry Pi 3, 4, or Zero 2 W</li>
+      <li>MicroSD card (8 GB+)</li>
+      <li>A USB wifi dongle (for the second interface) <em>or</em> a Pi with built-in wifi + a dongle</li>
+      <li>An internet connection (via ethernet or one wifi interface)</li>
+    </ul>
+    <p>
+      The Pi needs <strong>two wifi interfaces</strong>: one connects to your
+      upstream internet (STA), the other broadcasts the wifi.tree AP. On a
+      Pi 4, the built-in wifi handles one role and a USB dongle handles the
+      other. A Pi Zero 2 W typically needs a dongle for both.
+    </p>
+
+    <h2>1. Flash Raspberry Pi OS</h2>
+    <p>
+      Use <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener">Raspberry Pi Imager</a>
+      to flash Raspberry Pi OS Lite (64-bit) to your SD card.
+      Enable SSH and set a username/password in the imager's advanced settings.
+    </p>
+
+    <h2>2. Get the code</h2>
+    <pre><code>git clone https://github.com/AgentMage/wifi.tree
+cd wifi.tree/pi</code></pre>
+
+    <h2>3. Network setup</h2>
+    <p>
+      The Pi implementation uses a virtual AP interface (<code>uap0</code>)
+      on top of the built-in wifi adapter, and NAT via nftables. The AP subnet
+      is <code>10.42.0.0/24</code> with the Pi at <code>10.42.0.1</code>.
+    </p>
+    <pre><code># Create the virtual AP interface
+sudo bash sbin/wifitree-uap0-setup.sh
+
+# Set up traffic shaping (tc/CAKE)
+sudo bash sbin/wifitree-shaping.sh</code></pre>
+
+    <h2>4. Install services</h2>
+    <pre><code>sudo cp lib/*.py /usr/local/lib/wifitree/
+sudo cp sbin/wifitree-*.py /usr/local/sbin/
+sudo cp sbin/wifitree-*.sh /usr/local/sbin/
+
+# Install systemd service files (see pi/systemd/)
+sudo systemctl enable --now wifitree-portal
+sudo systemctl enable --now wifitree-webadmin
+sudo systemctl enable --now wifitree-accountd</code></pre>
+
+    <h2>5. Configure</h2>
+    <p>
+      Edit <code>/etc/wifitree/settings.json</code> for operational settings
+      (leaf TTL, data cap, bandwidth cap) and
+      <code>/etc/wifitree/portal.json</code> for appearance (title, emoji,
+      colors, copy). Both are live-reloaded — no restart needed.
+    </p>
+
+    <h2>6. Your tree is live</h2>
+    <p>
+      The AP broadcasts <code>wifi.tree</code>. The admin panel runs at
+      <code>http://10.42.0.1:8090</code> on your local network. 🌳
+    </p>
+
+    <h2>Services</h2>
+    <ul>
+      <li><code>wifitree-portal</code> — captive portal HTTP server</li>
+      <li><code>wifitree-webadmin</code> — admin panel on <code>:8090</code></li>
+      <li><code>wifitree-accountd</code> — bandwidth metering, quota enforcement</li>
+    </ul>
+    <pre><code>sudo systemctl restart wifitree-portal
+
+# Live terminal dashboard
+sudo python3 /usr/local/sbin/wifitree-monitor.py
+
+# CLI user management
+sudo python3 /usr/local/sbin/wifitree-admin.py list</code></pre>
+
+    <h2>Pi-only features</h2>
+    <ul>
+      <li>Monthly per-visitor data quotas (resets each calendar month)</li>
+      <li>tc/CAKE traffic shaping (20 Mbit shared pool + per-device caps)</li>
+      <li>SQLite-backed visitor history (<code>/var/lib/wifitree/wifitree.db</code>)</li>
+      <li>dnsmasq DHCP with hostname capture</li>
+    </ul>
+
+    <div class="card info" style="margin-top:32px;">
+      <h3>Just want something simple?</h3>
+      <p>
+        The <a href="/docs/esp32">ESP32 version</a> is cheaper, needs no SD
+        card or setup beyond flashing, and works great for most community
+        setups. The Pi version is for operators who want more control and
+        persistent, calendar-month quotas.
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <div class="footer-mark">🌳</div>
+  <p class="footer-line">
+    wifi.mom · source available · <a href="https://github.com/AgentMage/wifi.tree">GitHub</a>
+  </p>
+  <p class="footer-line">Wood-speed, shared, fair. Leave no trace, leave a little love.</p>
+  <p class="footer-love">made with 💚 for the gathering</p>
+</footer>
+
+</body>
+</html>

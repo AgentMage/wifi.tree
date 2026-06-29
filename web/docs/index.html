@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wifi.mom — become a wifi.mom</title>
+  <meta name="description" content="Share your Starlink or hotspot as wood-speed wifi for the whole camp. Plant a wifi.tree on a $10 ESP32 or a Raspberry Pi Zero — order one ready to go, or build your own.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a class="nav-brand" href="/">🌳 wifi.mom</a>
+    <div class="nav-links">
+      <a href="/visitor" class="hide-sm">just connected?</a>
+      <a href="/docs/" class="active">docs</a>
+      <a href="/order">order</a>
+      <a href="https://github.com/AgentMage/wifi.tree">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="logo">🌱</div>
+  <h1>Become a wifi.mom</h1>
+  <p class="tag">share your signal with the whole camp</p>
+</div>
+
+<div class="section">
+  <p class="section-sub" style="font-size:1.05em; opacity:0.85; max-width:580px;">
+    Got a Starlink dish or a hotspot and a patch of wilderness full of people
+    with no signal? You've got everything you need to be a wifi.mom. Pick a
+    tree, plant it, and your uplink becomes wood-speed wifi for the gathering.
+    The product is the easy path — but the source is open if you'd rather
+    build your own for personal or community use.
+  </p>
+
+  <div class="hw-options" style="margin-top:28px;">
+    <div class="card hw-card">
+      <span class="badge">the easy way</span>
+      <h3 style="margin-top:12px;">wifi.tree/sprout</h3>
+      <p class="hw-tag">ESP32 · ~$10 · simple</p>
+      <p>
+        A chip the size of a stick of gum that does the whole job on its own —
+        wifi, DNS, and the portal, all on board. Perfect for the parking lot,
+        a camp, a pop-up, or anywhere you want the least possible gear to haul.
+      </p>
+      <a class="btn honey full" href="/order">Order one ready to go →</a>
+      <a class="btn sec full" href="/docs/esp32" style="margin-top:10px;">Or flash an ESP32 yourself →</a>
+    </div>
+    <div class="card hw-card">
+      <h3>wifi.tree/sapling</h3>
+      <p class="hw-tag">Raspberry Pi Zero · ~$35+ · more visitors</p>
+      <p>
+        More room to grow: data quotas, fancier traffic shaping, and a full
+        visitor history. Best for a base camp or a long gathering where you want
+        the extra knobs. For those who have Raspberry Pi Zero W 1 or 2 and dont want to buy or build a sprout.
+      </p>
+      <a class="btn sec full" href="/docs/pi">Sapling setup guide →</a>
+    </div>
+  </div>
+</div>
+
+<div class="section night">
+  <span class="eyebrow">before you roll out</span>
+  <h2>What you'll need</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-icon">🛰️</div>
+      <div class="step-body">
+        <strong>A signal to share</strong>
+        <p>Starlink, a cell hotspot, any uplink you packed in. Your tree
+        connects to it and quietly re-shares it as wood-speed wifi across
+        camp.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-icon">🪴</div>
+      <div class="step-body">
+        <strong>A tree to plant</strong>
+        <p>A wifi.tree/sprout (any common ESP32, ~$10 — or
+        <a href="/order">order one ready to go</a>) or a wifi.tree/sapling
+        (Raspberry Pi Zero W 1 or 2).</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-icon">🔋</div>
+      <div class="step-body">
+        <strong>A little power</strong>
+        <p>A USB battery, a solar bank, or a cigarette-lighter adapter. A sprout
+        sips so little you'll forget it's on. Flash it once at home, then it
+        runs itself.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <span class="eyebrow">the gentle philosophy</span>
+  <h2>Why a tree, and why wood-speed?</h2>
+  <div class="prose">
+    <p>
+      A wifi.tree is <strong>deliberately slow</strong>. The default cap is
+      100 kbps per visitor — plenty for messaging, maps, and saying you made it
+      in, but not enough for anyone to swallow the whole dish. One uplink, a
+      whole camp, kept fair. That's wood-speed.
+    </p>
+    <p>
+      <strong>Leaves expire</strong> after a few hours. It keeps the guest list
+      fresh and gently reminds everyone the signal is shared and alive. Nobody's
+      ever locked out — you can always grow a new leaf.
+    </p>
+    <p>
+      And it's <strong>all yours to shape</strong>: the tree's name, the emoji,
+      the welcome note, the accent color, the leaf lifetime, the speed cap. Make
+      it sound like your camp. It's your tree, your gathering, your rules.
+    </p>
+    <h2>License</h2>
+    <p>
+      wifi.tree is released under the
+      <a href="https://github.com/AgentMage/wifi.tree/blob/master/LICENSE" target="_blank">PolyForm Noncommercial License</a>.
+      You can use, modify, and share it freely for personal, educational, and
+      community purposes. Selling hardware or services built on it requires a
+      commercial license — <a href="mailto:lilly.fiorino@gmail.com">get in touch</a>.
+    </p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-mark">🌳</div>
+  <p class="footer-line">
+    wifi.tree · source available · <a href="https://github.com/AgentMage/wifi.tree">GitHub</a>
+  </p>
+  <p class="footer-line">Wood-speed, shared, fair. Leave no trace, leave a little love.</p>
+  <p class="footer-love">made with 💚 for the gathering</p>
+</footer>
+
+</body>
+</html>

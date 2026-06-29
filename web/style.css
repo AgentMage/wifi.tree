@@ -1,0 +1,637 @@
+/*
+ * wifi.mom — website stylesheet
+ * Extends the portal visual identity (spec/design.css) for a full website.
+ * Forest-dark base + a warm "mom" honey accent and a few playful touches.
+ */
+
+:root {
+  --bg:        #0b1a0f;
+  --bg-soft:   #12251a;
+  --bg-card:   #122a1b;
+  --ink:       #eaffea;
+  --leaf:      #9fe89f;
+  --leaf-bright:#8ef08e;
+  --green:     #2e7d32;
+  --green-lit: #46a24b;
+  --border:    #1f3d29;
+  /* warm "mom" accent — like kitchen light through the trees */
+  --honey:     #f5a623;
+  --honey-deep:#d98c10;
+  --paper:     #f6e7c4;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  /* canopy + campfire + a little starlight overhead */
+  background-image:
+    radial-gradient(60% 40% at 50% -8%, rgba(70, 162, 75, 0.18), transparent 70%),
+    radial-gradient(40% 30% at 12% 2%, rgba(154, 123, 255, 0.10), transparent 70%),
+    radial-gradient(40% 30% at 88% 6%, rgba(240, 194, 122, 0.12), transparent 70%);
+  background-attachment: fixed;
+}
+
+a { color: var(--leaf); }
+
+::selection { background: var(--honey); color: #2a1c06; }
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+
+nav {
+  position: sticky;
+  top: 0;
+  background: rgba(11, 26, 15, 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  padding: 0 24px;
+}
+
+.nav-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+}
+
+.nav-brand {
+  font-weight: 800;
+  font-size: 1.15em;
+  color: var(--leaf);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.nav-links {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+}
+
+.nav-links a {
+  color: var(--ink);
+  text-decoration: none;
+  opacity: 0.66;
+  font-size: 0.95em;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.nav-links a:hover { opacity: 1; }
+.nav-links a.active { opacity: 1; color: var(--leaf); }
+
+/* ── Sections ────────────────────────────────────────────────────────────── */
+
+.section {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 60px 24px;
+}
+
+.section + .section {
+  border-top: 1px solid var(--border);
+}
+
+.section h2 {
+  color: var(--leaf);
+  font-size: 1.55em;
+  margin: 0 0 8px;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.section .section-sub {
+  text-align: center;
+  opacity: 0.6;
+  margin: 0 auto 34px;
+  max-width: 460px;
+  line-height: 1.5;
+}
+
+.eyebrow {
+  display: block;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--honey);
+  opacity: 0.9;
+  margin-bottom: 10px;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+
+.hero {
+  text-align: center;
+  padding: 84px 24px 64px;
+  max-width: 660px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.hero-emoji {
+  font-size: 4.6em;
+  line-height: 1;
+  margin-bottom: 8px;
+  display: inline-block;
+  animation: sway 5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+@keyframes sway {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
+}
+
+.hero h1 {
+  color: var(--leaf);
+  font-size: 3.1em;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.hero-tag {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 0 0 20px;
+  background: linear-gradient(90deg, var(--honey), var(--leaf));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-desc {
+  font-size: 1.12em;
+  line-height: 1.7;
+  opacity: 0.9;
+  margin-bottom: 30px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero-fine {
+  margin-top: 16px;
+  font-size: 0.85em;
+  opacity: 0.5;
+}
+
+/* ── Steps (growth story) ────────────────────────────────────────────────── */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.step {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  position: relative;
+  transition: border-color 0.18s, transform 0.18s;
+}
+
+.step:hover { border-color: var(--green-lit); transform: translateY(-2px); }
+
+.step-num {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  font-size: 0.78em;
+  font-weight: 800;
+  color: var(--honey);
+  opacity: 0.55;
+  letter-spacing: 0.1em;
+}
+
+.step-icon {
+  font-size: 2.2em;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.step-body strong {
+  display: block;
+  color: var(--leaf);
+  font-size: 1.1em;
+  margin-bottom: 5px;
+}
+
+.step-body p {
+  opacity: 0.84;
+  line-height: 1.6;
+  margin: 0;
+  font-size: 0.98em;
+}
+
+.step-connector {
+  text-align: center;
+  color: var(--green-lit);
+  opacity: 0.5;
+  font-size: 1.1em;
+  line-height: 0.6;
+}
+
+/* ── Note (sticky note from mom) ─────────────────────────────────────────── */
+
+.note {
+  background: var(--paper);
+  color: #4a3a1a;
+  border-radius: 4px;
+  padding: 24px 26px 26px;
+  max-width: 440px;
+  margin: 0 auto;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+  transform: rotate(-1.4deg);
+  position: relative;
+  line-height: 1.6;
+  font-size: 1.05em;
+}
+
+.note::before {
+  /* tape */
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%) rotate(2deg);
+  width: 92px;
+  height: 26px;
+  background: rgba(240, 194, 122, 0.5);
+  border: 1px solid rgba(224, 166, 78, 0.4);
+  border-radius: 2px;
+}
+
+.note p { margin: 0 0 12px; }
+.note p:last-child { margin-bottom: 0; }
+.note .signoff {
+  font-style: italic;
+  text-align: right;
+  opacity: 0.8;
+}
+
+/* ── House rules ─────────────────────────────────────────────────────────── */
+
+.rules {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 480px;
+  display: grid;
+  gap: 12px;
+}
+
+.rules li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--honey);
+  border-radius: 12px;
+  padding: 14px 18px;
+  line-height: 1.4;
+}
+
+.rules li .r-emoji { font-size: 1.3em; flex-shrink: 0; }
+
+/* ── Two-path split ──────────────────────────────────────────────────────── */
+
+.two-paths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.path {
+  text-align: center;
+  padding: 32px 24px 26px;
+}
+
+.path-icon {
+  font-size: 2.8em;
+  margin-bottom: 12px;
+}
+
+.path h3 {
+  color: var(--leaf);
+  margin: 0 0 8px;
+  font-size: 1.2em;
+}
+
+.path p {
+  opacity: 0.84;
+  font-size: 0.96em;
+  line-height: 1.55;
+  margin: 0 0 20px;
+}
+
+/* ── Feature grid (why wifi.mom) ─────────────────────────────────────────── */
+
+.features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.feature {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 22px;
+  transition: border-color 0.18s, transform 0.18s;
+}
+
+.feature:hover { border-color: var(--green-lit); transform: translateY(-2px); }
+
+.feature .f-emoji { font-size: 1.7em; display: block; margin-bottom: 10px; }
+.feature h3 { color: var(--leaf); margin: 0 0 6px; font-size: 1.05em; }
+.feature p { opacity: 0.82; line-height: 1.55; margin: 0; font-size: 0.94em; }
+
+/* ── Hardware options ────────────────────────────────────────────────────── */
+
+.hw-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.hw-card { position: relative; }
+
+.hw-card h3 {
+  color: var(--leaf);
+  margin: 0 0 6px;
+  font-size: 1.15em;
+}
+
+.hw-card .hw-tag {
+  font-size: 0.82em;
+  opacity: 0.62;
+  margin-bottom: 12px;
+}
+
+.hw-card p {
+  font-size: 0.95em;
+  opacity: 0.83;
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 22px;
+  margin-bottom: 16px;
+}
+
+.card.ok   { border-color: var(--green); }
+.card.info { border-color: var(--green); background: #0f2417; }
+.card.warm { border-color: var(--honey-deep); background: #1c1810; }
+
+.card h3 {
+  color: var(--leaf);
+  margin: 0 0 8px;
+  font-size: 1.1em;
+}
+
+.card p {
+  opacity: 0.83;
+  line-height: 1.6;
+  margin: 0;
+  font-size: 0.97em;
+}
+
+/* price tag */
+.price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.price .amt { font-size: 2.1em; font-weight: 800; color: var(--honey); line-height: 1; }
+.price .per { font-size: 0.85em; opacity: 0.6; }
+
+/* badge */
+.badge {
+  display: inline-block;
+  background: rgba(240, 194, 122, 0.14);
+  color: var(--honey);
+  border: 1px solid rgba(240, 194, 122, 0.3);
+  border-radius: 99px;
+  padding: 3px 12px;
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Prose ───────────────────────────────────────────────────────────────── */
+
+.prose {
+  max-width: 660px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+.prose p { margin: 0 0 16px; opacity: 0.88; }
+.prose h2 { color: var(--leaf); margin: 38px 0 12px; font-size: 1.35em; text-align: left; }
+.prose h3 { color: var(--leaf); margin: 28px 0 8px; font-size: 1.05em; opacity: 0.9; }
+.prose ul { padding-left: 22px; opacity: 0.88; }
+.prose li { margin-bottom: 7px; }
+.prose strong { color: var(--leaf); opacity: 0.95; }
+.prose code {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+  color: var(--leaf);
+}
+.prose pre {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+  color: var(--leaf);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-block;
+  text-decoration: none;
+  font-size: 1.05em;
+  font-weight: 700;
+  padding: 13px 24px;
+  background: var(--green);
+  color: #fff;
+  border-radius: 12px;
+  transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+}
+
+.btn:hover { background: var(--green-lit); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(46, 125, 50, 0.3); }
+.btn:active { transform: translateY(0); }
+
+.btn.sec {
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--leaf);
+}
+.btn.sec:hover { background: rgba(46, 125, 50, 0.14); box-shadow: none; }
+
+.btn.honey {
+  background: var(--honey);
+  color: #1a0e02;
+  text-shadow: none;
+}
+.btn.honey:hover { background: var(--honey-deep); box-shadow: 0 8px 24px rgba(245, 166, 35, 0.4); }
+
+.btn.full {
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+
+/* ── Page header (inner pages) ───────────────────────────────────────────── */
+
+.page-header {
+  text-align: center;
+  padding: 60px 24px 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header .logo {
+  font-size: 3.2em;
+  margin-bottom: 6px;
+  display: inline-block;
+  animation: sway 5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+.page-header h1 {
+  color: var(--leaf);
+  font-size: 2.1em;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.page-header .tag {
+  color: var(--honey);
+  font-size: 1em;
+  font-weight: 500;
+  margin: 0;
+  opacity: 0.85;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+footer {
+  text-align: center;
+  padding: 44px 24px 40px;
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+}
+
+.footer-mark { font-size: 1.6em; margin-bottom: 8px; }
+.footer-line { opacity: 0.6; font-size: 0.9em; line-height: 1.7; }
+.footer-line a { color: var(--leaf); }
+.footer-love {
+  margin-top: 14px;
+  font-size: 0.82em;
+  opacity: 0.45;
+  font-style: italic;
+}
+
+/* ── Festival / rainbow accents ──────────────────────────────────────────── */
+
+.rainbow-rule {
+  height: 3px;
+  border: none;
+  border-radius: 99px;
+  background: linear-gradient(90deg,
+    #ff5a5a, #ffae3b, #ffe14d, #5ad17a, #4db8ff, #9a7bff, #ff7be0);
+  max-width: 260px;
+  margin: 22px auto 26px;
+  opacity: 0.9;
+}
+
+.rainbow-text {
+  background: linear-gradient(90deg,
+    #ff8a8a, #ffc46b, #ffe98a, #8ef0a0, #7ccaff, #b79bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* dictionary-style definition (for "wood-speed") */
+.define {
+  max-width: 540px;
+  margin: 0 auto;
+  text-align: left;
+  border: 1px dashed var(--border);
+  border-radius: 18px;
+  padding: 28px 30px;
+  background: var(--bg-soft);
+}
+
+.define .word {
+  font-size: 1.7em;
+  font-weight: 800;
+  color: var(--leaf);
+  letter-spacing: -0.01em;
+}
+.define .pron { opacity: 0.5; font-style: italic; margin-left: 10px; font-size: 0.55em; }
+.define .pos { display: block; opacity: 0.6; font-style: italic; margin: 6px 0 12px; font-size: 0.95em; }
+.define .def { line-height: 1.65; opacity: 0.9; margin: 0 0 12px; }
+.define .usage { line-height: 1.6; opacity: 0.7; font-style: italic; font-size: 0.95em; margin: 0; }
+.define .usage::before { content: "\201C"; }
+.define .usage::after  { content: "\201D"; }
+
+/* night sky tint for off-grid sections */
+.section.night {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(122, 108, 255, 0.07), transparent 70%);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 580px) {
+  .two-paths, .hw-options, .features { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 2.3em; }
+  .hero-desc { font-size: 1.04em; }
+  .nav-links { gap: 14px; }
+  .nav-links a.hide-sm { display: none; }
+}

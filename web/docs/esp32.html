@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wifi.mom — ESP32 setup guide</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a class="nav-brand" href="/">🌳 wifi.mom</a>
+    <div class="nav-links">
+      <a href="/visitor" class="hide-sm">for visitors</a>
+      <a href="/docs/" class="active">docs</a>
+      <a href="/order">order</a>
+      <a href="https://github.com/AgentMage/wifi.tree">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="logo">🌱</div>
+  <h1>ESP32 Setup Guide</h1>
+  <p class="tag">~$10 · portable · battery-friendly</p>
+</div>
+
+<div class="section">
+  <div class="prose">
+
+    <h2>What you'll need</h2>
+    <ul>
+      <li>An ESP32 dev board (any common <code>esp32dev</code>-compatible variant)</li>
+      <li>A USB cable (usually micro-USB or USB-C depending on board)</li>
+      <li>A computer with Python installed</li>
+      <li>An internet connection for the ESP32 to share</li>
+    </ul>
+
+    <h2>1. Install PlatformIO</h2>
+    <p>
+      The ESP32 firmware is built with
+      <a href="https://platformio.org" target="_blank" rel="noopener">PlatformIO</a>
+      using the ESP-IDF framework. Install the PlatformIO CLI:
+    </p>
+    <pre><code>pip install platformio</code></pre>
+
+    <h2>2. Get the firmware</h2>
+    <pre><code>git clone https://github.com/AgentMage/wifi.tree
+cd wifi.tree/esp32</code></pre>
+
+    <h2>3. Flash it</h2>
+    <p>Plug in your ESP32, then build and flash:</p>
+    <pre><code>pio run -t upload</code></pre>
+    <p>
+      The first flash takes a few minutes while PlatformIO downloads the
+      ESP-IDF toolchain. Subsequent flashes are fast.
+    </p>
+
+    <h2>4. First boot — setup wizard</h2>
+    <p>
+      On first boot (no saved wifi credentials), the ESP32 broadcasts a
+      network called <code>wifi.tree-setup</code>. Connect to it from your
+      phone or laptop.
+    </p>
+    <p>
+      Your device will open a captive portal showing nearby wifi networks.
+      Pick your home network, enter the password, and tap Save. The ESP32
+      reboots and connects to your network as a client.
+    </p>
+
+    <h2>5. Your tree is live</h2>
+    <p>
+      After reboot, the ESP32 broadcasts <code>wifi.tree</code>. Anyone who
+      connects will see the leaf-growing portal. You're a wifi.mom now. 🌳
+    </p>
+
+    <h2>Admin panel</h2>
+    <p>
+      Connect to <code>wifi.tree</code> and visit
+      <a href="http://wifi.tree/admin">http://wifi.tree/admin</a>.
+      The default password is <code>admin</code> — change it immediately on
+      the Settings page.
+    </p>
+    <p>From the admin panel you can:</p>
+    <ul>
+      <li>Set leaf lifetime, speed cap, time and data budgets</li>
+      <li>View connected visitors (live signal, data rates)</li>
+      <li>Per-visitor: override speed cap, kick, or reset budgets</li>
+      <li>Customize the portal appearance (name, emoji, colors, welcome text)</li>
+    </ul>
+
+    <h2>LED status</h2>
+    <ul>
+      <li><strong>Fast blink</strong> — setup mode (broadcasting wifi.tree-setup)</li>
+      <li><strong>Slow blink</strong> — connecting to your uplink</li>
+      <li><strong>Solid</strong> — online and serving visitors</li>
+    </ul>
+
+    <h2>Factory reset</h2>
+    <p>
+      Hold the <strong>BOOT button (GPIO0)</strong> for 5 seconds. The ESP32
+      wipes all stored credentials and visitor data, then reboots into setup
+      mode.
+    </p>
+
+    <h2>Monitor serial output</h2>
+    <pre><code>pio device monitor</code></pre>
+    <p>Useful for debugging. Baud rate is 115200.</p>
+
+    <div class="card info" style="margin-top:32px;">
+      <h3>ESP32 vs Pi</h3>
+      <p>
+        The ESP32 enforces lifetime connected-time and data budgets per visitor
+        (no wall clock, so no calendar-month resets). If you want monthly data
+        quotas and more powerful traffic shaping, see the
+        <a href="/docs/pi">Raspberry Pi guide</a>.
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <div class="footer-mark">🌳</div>
+  <p class="footer-line">
+    wifi.mom · source available · <a href="https://github.com/AgentMage/wifi.tree">GitHub</a>
+  </p>
+  <p class="footer-line">Wood-speed, shared, fair. Leave no trace, leave a little love.</p>
+  <p class="footer-love">made with 💚 for the gathering</p>
+</footer>
+
+</body>
+</html>
